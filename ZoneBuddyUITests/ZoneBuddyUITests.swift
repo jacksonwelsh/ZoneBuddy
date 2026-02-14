@@ -1,41 +1,40 @@
-//
-//  ZoneBuddyUITests.swift
-//  ZoneBuddyUITests
-//
-//  Created by Jackson Welsh on 2/13/26.
-//
-
 import XCTest
 
 final class ZoneBuddyUITests: XCTestCase {
+    private var app: XCUIApplication!
 
     override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
-
-        // In UI tests it is usually best to stop immediately when a failure occurs.
         continueAfterFailure = false
-
-        // In UI tests it’s important to set the initial state - such as interface orientation - required for your tests before they run. The setUp method is a good place to do this.
-    }
-
-    override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
-    }
-
-    @MainActor
-    func testExample() throws {
-        // UI tests must launch the application that they test.
-        let app = XCUIApplication()
+        app = XCUIApplication()
         app.launch()
-
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
     }
 
     @MainActor
-    func testLaunchPerformance() throws {
-        // This measures how long it takes to launch your application.
-        measure(metrics: [XCTApplicationLaunchMetric()]) {
-            XCUIApplication().launch()
-        }
+    func testWorkoutLibraryShowsOnLaunch() throws {
+        XCTAssertTrue(app.navigationBars["Workouts"].exists)
+    }
+
+    @MainActor
+    func testCreateNewWorkout() throws {
+        app.navigationBars["Workouts"].buttons["New Workout"].tap()
+
+        XCTAssertTrue(app.navigationBars["Edit Workout"].waitForExistence(timeout: 2))
+
+        let nameField = app.textFields["Workout Name"]
+        XCTAssertTrue(nameField.exists)
+    }
+
+    @MainActor
+    func testAddIntervalToWorkout() throws {
+        app.navigationBars["Workouts"].buttons["New Workout"].tap()
+        _ = app.navigationBars["Edit Workout"].waitForExistence(timeout: 2)
+
+        app.buttons["Add"].tap()
+
+        XCTAssertTrue(app.navigationBars["Add Interval"].waitForExistence(timeout: 2))
+
+        app.navigationBars["Add Interval"].buttons["Add"].tap()
+
+        XCTAssertTrue(app.staticTexts["Zone 3"].waitForExistence(timeout: 2))
     }
 }
