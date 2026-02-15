@@ -8,6 +8,8 @@ protocol SpeechCueProviding {
 final class LiveSpeechCueProvider: NSObject, SpeechCueProviding, AVSpeechSynthesizerDelegate {
     private let synthesizer = AVSpeechSynthesizer()
     private let voice: AVSpeechSynthesisVoice?
+    private let sessionQueue = DispatchQueue(label: "net.jacksonwelsh.ZoneBuddy.audioSession")
+    private var speakGeneration = 0
 
     override init() {
         self.voice = Self.preferredVoice()
@@ -16,12 +18,23 @@ final class LiveSpeechCueProvider: NSObject, SpeechCueProviding, AVSpeechSynthes
     }
 
     func speak(_ text: String) {
-        configureAudioSession()
+        speakGeneration += 1
+        let generation = speakGeneration
         synthesizer.stopSpeaking(at: .immediate)
+
         let utterance = AVSpeechUtterance(string: text)
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
         utterance.voice = voice
-        synthesizer.speak(utterance)
+
+        // Activate audio session off MainActor to avoid blocking the timer,
+        // then speak on MainActor once the session is ready.
+        sessionQueue.async { [weak self] in
+            Self.activateAudioSession()
+            DispatchQueue.main.async {
+                guard let self, self.speakGeneration == generation else { return }
+                self.synthesizer.speak(utterance)
+            }
+        }
     }
 
     private static func preferredVoice() -> AVSpeechSynthesisVoice? {
@@ -41,13 +54,16 @@ final class LiveSpeechCueProvider: NSObject, SpeechCueProviding, AVSpeechSynthes
     }
 
     func stop() {
+        speakGeneration += 1
         synthesizer.stopSpeaking(at: .immediate)
-        deactivateAudioSession()
+        sessionQueue.async {
+            Self.deactivateAudioSession()
+        }
     }
 
     // MARK: - Audio Session
 
-    private func configureAudioSession() {
+    private nonisolated static func activateAudioSession() {
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, options: .duckOthers)
@@ -57,7 +73,7 @@ final class LiveSpeechCueProvider: NSObject, SpeechCueProviding, AVSpeechSynthes
         }
     }
 
-    private func deactivateAudioSession() {
+    private nonisolated static func deactivateAudioSession() {
         do {
             try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         } catch {
@@ -68,8 +84,8 @@ final class LiveSpeechCueProvider: NSObject, SpeechCueProviding, AVSpeechSynthes
     // MARK: - AVSpeechSynthesizerDelegate
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        Task { @MainActor in
-            self.deactivateAudioSession()
+        sessionQueue.async {
+            Self.deactivateAudioSession()
         }
     }
 }

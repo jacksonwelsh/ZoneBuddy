@@ -1,7 +1,7 @@
 import ActivityKit
 import SwiftUI
 import WidgetKit
-import ZoneBuddy // Added import for PowerZone and formattedDuration
+
 
 struct WorkoutLiveActivity: Widget {
     var body: some WidgetConfiguration {
