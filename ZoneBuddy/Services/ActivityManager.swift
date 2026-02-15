@@ -16,14 +16,17 @@ final class LiveActivityManager: ActivityManaging {
     private var activity: Activity<WorkoutActivityAttributes>?
 
     func startActivity(attributes: WorkoutActivityAttributes, state: WorkoutActivityAttributes.ContentState) {
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-        do {
-            activity = try Activity.request(
-                attributes: attributes,
-                content: .init(state: state, staleDate: nil)
-            )
-        } catch {
-            print("Failed to start Live Activity: \(error)")
+        Task.detached {
+            guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+            do {
+                let activity = try Activity.request(
+                    attributes: attributes,
+                    content: .init(state: state, staleDate: nil)
+                )
+                await MainActor.run { self.activity = activity }
+            } catch {
+                print("Failed to start Live Activity: \(error)")
+            }
         }
     }
 

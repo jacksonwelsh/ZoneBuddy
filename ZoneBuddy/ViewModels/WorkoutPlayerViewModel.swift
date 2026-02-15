@@ -123,8 +123,8 @@ final class WorkoutPlayerViewModel {
                 workoutName: workoutName,
                 totalIntervals: intervals.count
             )
-            activityManager.startActivity(attributes: attributes, state: makeContentState())
             speakCurrentLabel()
+            activityManager.startActivity(attributes: attributes, state: makeContentState())
         } else {
             activityManager.updateActivity(state: makeContentState())
         }

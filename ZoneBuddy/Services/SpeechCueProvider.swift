@@ -6,86 +6,82 @@ protocol SpeechCueProviding {
 }
 
 final class LiveSpeechCueProvider: NSObject, SpeechCueProviding, AVSpeechSynthesizerDelegate {
+    // Singleton to ensure consistent state and one-time initialization
+    nonisolated(unsafe) private static let shared = LiveSpeechCueProvider()
+    
+    // Serial queue to prevent blocking the Main Thread with audio session IPC calls
+    private let queue = DispatchQueue(label: "net.jacksonwelsh.ZoneBuddy.speech", qos: .userInitiated)
+    
+    // The synthesizer uses the shared audio session to support ducking
     private let synthesizer = AVSpeechSynthesizer()
-    private let voice: AVSpeechSynthesisVoice?
-    private let sessionQueue = DispatchQueue(label: "net.jacksonwelsh.ZoneBuddy.audioSession")
-    private var speakGeneration = 0
 
     override init() {
-        self.voice = Self.preferredVoice()
         super.init()
         synthesizer.delegate = self
     }
 
-    func speak(_ text: String) {
-        speakGeneration += 1
-        let generation = speakGeneration
-        synthesizer.stopSpeaking(at: .immediate)
-
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-        utterance.voice = voice
-
-        // Activate audio session off MainActor to avoid blocking the timer,
-        // then speak on MainActor once the session is ready.
-        sessionQueue.async { [weak self] in
-            Self.activateAudioSession()
-            DispatchQueue.main.async {
-                guard let self, self.speakGeneration == generation else { return }
-                self.synthesizer.speak(utterance)
+    /// Pre-warms the audio engine without interrupting background audio.
+    /// MUST be called from `ZoneBuddyApp.init()`.
+    static func warmUp() {
+        // Dispatch to background to avoid any launch-time main thread blocking
+        shared.queue.async {
+            // 1. Initialize the synthesizer (loads dylibs)
+            _ = shared.synthesizer
+            
+            // 2. Configure session to mix with others. 
+            // This prevents the app from stopping music/podcasts when it launches.
+            let session = AVAudioSession.sharedInstance()
+            do {
+                try session.setCategory(.playback, mode: .spokenAudio, options: [.mixWithOthers, .duckOthers])
+                // Note: We do NOT setActive(true) here. That is what stops background audio if not careful.
+            } catch {
+                print("Failed to configure audio session in warmUp: \(error)")
             }
         }
     }
 
-    private static func preferredVoice() -> AVSpeechSynthesisVoice? {
-        let languageCode = AVSpeechSynthesisVoice.currentLanguageCode()
-        let languagePrefix = String(languageCode.prefix(2))
-
-        // Find all voices matching the user's language, preferring exact region match
-        let candidates = AVSpeechSynthesisVoice.speechVoices()
-            .filter { $0.language == languageCode || $0.language.hasPrefix(languagePrefix) }
-            .sorted { $0.quality.rawValue > $1.quality.rawValue }
-
-        // Return the highest-quality voice available, but only if better than the built-in default
-        if let best = candidates.first, best.quality != .default {
-            return best
+    func speak(_ text: String) {
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+        
+        queue.async { [weak self] in
+            guard let self else { return }
+            
+            let session = AVAudioSession.sharedInstance()
+            do {
+                // Ensure the category is set to duck others before we start speaking
+                try session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers, .interruptSpokenAudioAndMixWithOthers])
+                try session.setActive(true, options: .notifyOthersOnDeactivation)
+            } catch {
+                print("Failed to activate audio session: \(error)")
+            }
+            
+            if self.synthesizer.isSpeaking {
+                self.synthesizer.stopSpeaking(at: .immediate)
+            }
+            self.synthesizer.speak(utterance)
         }
-        return nil
     }
 
     func stop() {
-        speakGeneration += 1
-        synthesizer.stopSpeaking(at: .immediate)
-        sessionQueue.async {
-            Self.deactivateAudioSession()
-        }
-    }
-
-    // MARK: - Audio Session
-
-    private nonisolated static func activateAudioSession() {
-        do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, options: .duckOthers)
-            try session.setActive(true)
-        } catch {
-            print("Failed to configure audio session: \(error)")
-        }
-    }
-
-    private nonisolated static func deactivateAudioSession() {
-        do {
-            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-        } catch {
-            // Ignore — session may already be inactive
+        queue.async { [weak self] in
+            self?.synthesizer.stopSpeaking(at: .immediate)
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         }
     }
 
     // MARK: - AVSpeechSynthesizerDelegate
 
-    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        sessionQueue.async {
-            Self.deactivateAudioSession()
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        queue.async {
+            // Deactivate session to allow other audio to return to full volume
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
+    }
+    
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        queue.async {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         }
     }
 }

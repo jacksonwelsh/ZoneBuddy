@@ -10,6 +10,10 @@ import SwiftData
 
 @main
 struct ZoneBuddyApp: App {
+    init() {
+        LiveSpeechCueProvider.warmUp()
+    }
+
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             Workout.self,
