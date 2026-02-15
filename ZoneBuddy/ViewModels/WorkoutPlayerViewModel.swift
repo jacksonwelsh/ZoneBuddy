@@ -36,9 +36,8 @@ final class WorkoutPlayerViewModel {
 
     var currentLabel: String {
         guard let interval = currentInterval else { return "" }
-        if interval.isWarmup { return "Warmup" }
         if isLastInterval && interval.zone == .zone1 { return "Cooldown" }
-        return interval.zone?.displayName ?? ""
+        return interval.baseLabel
     }
 
     var currentZoneNumber: Int? {
@@ -47,11 +46,10 @@ final class WorkoutPlayerViewModel {
 
     var upcomingLabel: String {
         guard let next = nextInterval else { return "" }
-        if next.isWarmup { return "Warmup" }
         let nextIndex = currentIntervalIndex + 1
         let isNextLast = nextIndex == intervals.count - 1
         if isNextLast && next.zone == .zone1 { return "Cooldown" }
-        return next.zone?.displayName ?? ""
+        return next.baseLabel
     }
 
     var upcomingZoneColor: Color {

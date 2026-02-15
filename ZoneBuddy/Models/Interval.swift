@@ -22,6 +22,11 @@ final class Interval {
         zoneRawValue == nil
     }
 
+    var baseLabel: String {
+        if isWarmup { return "Warmup" }
+        return zone?.displayName ?? ""
+    }
+
     init(zone: PowerZone?, duration: Int, sortOrder: Int) {
         self.zoneRawValue = zone?.rawValue
         self.duration = duration
