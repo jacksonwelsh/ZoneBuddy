@@ -1,18 +1,7 @@
 import ActivityKit
 import SwiftUI
 import WidgetKit
-
-private extension Int {
-    var formattedDuration: String {
-        let hours = self / 3600
-        let minutes = (self % 3600) / 60
-        let seconds = self % 60
-        if hours > 0 {
-            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
-        }
-        return String(format: "%d:%02d", minutes, seconds)
-    }
-}
+import ZoneBuddy // Added import for PowerZone and formattedDuration
 
 struct WorkoutLiveActivity: Widget {
     var body: some WidgetConfiguration {
@@ -36,8 +25,8 @@ struct WorkoutLiveActivity: Widget {
                 }
             } compactLeading: {
                 HStack(spacing: 2) {
-                    zoneColorDot(zoneRawValue: context.state.currentZoneRawValue)
-                    zoneName(zoneRawValue: context.state.currentZoneRawValue)
+                    zoneColorDot(for: PowerZone(rawValue: context.state.currentZoneRawValue ?? 1))
+                    zoneName(for: PowerZone(rawValue: context.state.currentZoneRawValue ?? 1))
                 }
             } compactTrailing: {
                 timerText(state: context.state)
@@ -52,7 +41,8 @@ struct WorkoutLiveActivity: Widget {
     @ViewBuilder
     private func lockScreenView(context: ActivityViewContext<WorkoutActivityAttributes>) -> some View {
         let state = context.state
-        let currentColor = zoneColor(for: state.currentZoneRawValue)
+        let currentPowerZone = PowerZone(rawValue: state.currentZoneRawValue ?? 1)
+        let currentColor = currentPowerZone?.color ?? .gray
 
         HStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
@@ -78,9 +68,10 @@ struct WorkoutLiveActivity: Widget {
                     .tint(currentColor)
 
                 if !state.upcomingLabel.isEmpty {
+                    let nextPowerZone = PowerZone(rawValue: state.nextZoneRawValue ?? 1)
                     HStack(spacing: 4) {
                         Circle()
-                            .fill(zoneColor(for: state.nextZoneRawValue))
+                            .fill(nextPowerZone?.color ?? .gray)
                             .frame(width: 8, height: 8)
                         Text("Next: \(state.upcomingLabel)")
                             .font(.caption2)
@@ -129,16 +120,17 @@ struct WorkoutLiveActivity: Widget {
     @ViewBuilder
     private func expandedBottom(context: ActivityViewContext<WorkoutActivityAttributes>) -> some View {
         let state = context.state
-        let color = zoneColor(for: state.currentZoneRawValue)
-
+        let currentPowerZone = PowerZone(rawValue: state.currentZoneRawValue ?? 1)
+        
         VStack(spacing: 8) {
             ProgressView(value: state.intervalProgress)
-                .tint(color)
+                .tint(currentPowerZone?.color ?? .gray)
 
             if !state.upcomingLabel.isEmpty {
+                let nextPowerZone = PowerZone(rawValue: state.nextZoneRawValue ?? 1)
                 HStack(spacing: 4) {
                     Circle()
-                        .fill(zoneColor(for: state.nextZoneRawValue))
+                        .fill(nextPowerZone?.color ?? .gray)
                         .frame(width: 8, height: 8)
                         .offset(x: 4)
                     Text("Next: \(state.upcomingLabel)")
@@ -157,16 +149,16 @@ struct WorkoutLiveActivity: Widget {
     // MARK: - Compact & Minimal
 
     @ViewBuilder
-    private func zoneColorDot(zoneRawValue: Int?) -> some View {
+    private func zoneColorDot(for zone: PowerZone?) -> some View {
         Circle()
-            .fill(zoneColor(for: zoneRawValue))
+            .fill(zone?.color ?? Color.gray)
             .frame(width: 12, height: 12)
     }
     
     @ViewBuilder
-    private func zoneName(zoneRawValue: Int?) -> some View {
-        if let zoneNum = zoneRawValue {
-            Text("Zone \(zoneNum)")
+    private func zoneName(for zone: PowerZone?) -> some View {
+        if let zone = zone {
+            Text(zone.displayName)
                 .font(.caption.bold())
         } else {
             Text("Unknown")
@@ -180,14 +172,15 @@ struct WorkoutLiveActivity: Widget {
             Text(timerInterval: Date()...endDate, countsDown: true)
                 .monospacedDigit()
         } else {
-            Text(state.secondsRemaining.formattedDuration)
+            Text(state.secondsRemaining.formattedDuration) // Assuming formattedDuration is now shared via extension
                 .monospacedDigit()
         }
     }
 
     @ViewBuilder
     private func minimalView(state: WorkoutActivityAttributes.ContentState) -> some View {
-        let color = zoneColor(for: state.currentZoneRawValue)
+        let currentPowerZone = PowerZone(rawValue: state.currentZoneRawValue ?? 1)
+        let color = currentPowerZone?.color ?? .gray
 
         ZStack {
             Circle()
@@ -198,22 +191,5 @@ struct WorkoutLiveActivity: Widget {
                     .foregroundStyle(.white)
             }
         }
-    }
-
-    // MARK: - Helpers
-
-    private static let zoneColors: [Int: Color] = [
-        1: Color(red: 0.63, green: 0.63, blue: 0.63),
-        2: Color(red: 0.00, green: 0.47, blue: 1.00),
-        3: Color(red: 0.00, green: 0.80, blue: 0.00),
-        4: Color(red: 1.00, green: 0.84, blue: 0.00),
-        5: Color(red: 1.00, green: 0.55, blue: 0.00),
-        6: Color(red: 1.00, green: 0.13, blue: 0.00),
-        7: Color(red: 0.55, green: 0.00, blue: 1.00),
-    ]
-
-    private func zoneColor(for rawValue: Int?) -> Color {
-        guard let rawValue else { return .gray }
-        return Self.zoneColors[rawValue] ?? .gray
     }
 }

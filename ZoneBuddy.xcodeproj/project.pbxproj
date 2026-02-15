@@ -70,6 +70,9 @@
 		647174B02F41576100CD86C8 /* Exceptions for "ZoneBuddy" folder in "ZoneBuddyLiveActivityExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				Assets.xcassets,
+				"Extensions/Duration+Formatting.swift",
+				Models/PowerZone.swift,
 				Models/WorkoutActivityAttributes.swift,
 			);
 			target = 647174902F41566300CD86C8 /* ZoneBuddyLiveActivityExtension */;
