@@ -3,12 +3,12 @@ import SwiftData
 
 @Model
 final class Workout {
-    var name: String
-    var createdAt: Date
+    var name: String = ""
+    var createdAt: Date = Date.now
     var transitionWarningDuration: Int = 10
 
     @Relationship(deleteRule: .cascade, inverse: \Interval.workout)
-    var intervals: [Interval]
+    var intervals: [Interval]?
 
     init(name: String, intervals: [Interval] = [], transitionWarningDuration: Int = 10) {
         self.name = name
@@ -18,11 +18,11 @@ final class Workout {
     }
 
     var sortedIntervals: [Interval] {
-        intervals.sorted { $0.sortOrder < $1.sortOrder }
+        intervals?.sorted { $0.sortOrder < $1.sortOrder } ?? []
     }
 
     var totalDuration: Int {
-        intervals.reduce(0) { $0 + $1.duration }
+        intervals?.reduce(0) { $0 + $1.duration } ?? 0
     }
 
     func isCooldown(_ interval: Interval) -> Bool {

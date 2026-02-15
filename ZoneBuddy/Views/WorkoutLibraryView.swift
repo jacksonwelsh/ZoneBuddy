@@ -14,7 +14,7 @@ struct WorkoutLibraryView: View {
                         VStack(alignment: .leading) {
                             Text(workout.name)
                                 .font(.headline)
-                            Text("\(workout.intervals.count) intervals \u{2022} \(workout.totalDuration.formattedDuration)")
+                            Text("\(workout.intervals?.count ?? 0) intervals \u{2022} \(workout.totalDuration.formattedDuration)")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }

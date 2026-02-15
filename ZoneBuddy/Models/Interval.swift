@@ -4,8 +4,8 @@ import SwiftData
 @Model
 final class Interval {
     var zoneRawValue: Int?
-    var duration: Int
-    var sortOrder: Int
+    var duration: Int = 60
+    var sortOrder: Int = 0
     var workout: Workout?
 
     var zone: PowerZone? {
