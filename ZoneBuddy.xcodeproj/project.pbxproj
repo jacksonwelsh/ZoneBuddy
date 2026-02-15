@@ -6,7 +6,20 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		647174942F41566300CD86C8 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 647174932F41566300CD86C8 /* WidgetKit.framework */; };
+		647174962F41566300CD86C8 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 647174952F41566300CD86C8 /* SwiftUI.framework */; };
+		647174A52F41566400CD86C8 /* ZoneBuddyLiveActivityExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 647174912F41566300CD86C8 /* ZoneBuddyLiveActivityExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
+		647174A32F41566400CD86C8 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 64D3B06B2F4039A800D06A68 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 647174902F41566300CD86C8;
+			remoteInfo = ZoneBuddyLiveActivityExtension;
+		};
 		64D3B0852F4039AA00D06A68 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 64D3B06B2F4039A800D06A68 /* Project object */;
@@ -23,13 +36,44 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		647174AA2F41566400CD86C8 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				647174A52F41566400CD86C8 /* ZoneBuddyLiveActivityExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		647174912F41566300CD86C8 /* ZoneBuddyLiveActivityExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ZoneBuddyLiveActivityExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		647174932F41566300CD86C8 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		647174952F41566300CD86C8 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		64D3B0732F4039A800D06A68 /* ZoneBuddy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ZoneBuddy.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		64D3B0842F4039AA00D06A68 /* ZoneBuddyTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ZoneBuddyTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		64D3B08E2F4039AA00D06A68 /* ZoneBuddyUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ZoneBuddyUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		647174A92F41566400CD86C8 /* Exceptions for "ZoneBuddyLiveActivity" folder in "ZoneBuddyLiveActivityExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 647174902F41566300CD86C8 /* ZoneBuddyLiveActivityExtension */;
+		};
+		647174B02F41576100CD86C8 /* Exceptions for "ZoneBuddy" folder in "ZoneBuddyLiveActivityExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Models/WorkoutActivityAttributes.swift,
+			);
+			target = 647174902F41566300CD86C8 /* ZoneBuddyLiveActivityExtension */;
+		};
 		64D3B0962F4039AA00D06A68 /* Exceptions for "ZoneBuddy" folder in "ZoneBuddy" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -40,10 +84,19 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		647174972F41566300CD86C8 /* ZoneBuddyLiveActivity */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				647174A92F41566400CD86C8 /* Exceptions for "ZoneBuddyLiveActivity" folder in "ZoneBuddyLiveActivityExtension" target */,
+			);
+			path = ZoneBuddyLiveActivity;
+			sourceTree = "<group>";
+		};
 		64D3B0752F4039A800D06A68 /* ZoneBuddy */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				64D3B0962F4039AA00D06A68 /* Exceptions for "ZoneBuddy" folder in "ZoneBuddy" target */,
+				647174B02F41576100CD86C8 /* Exceptions for "ZoneBuddy" folder in "ZoneBuddyLiveActivityExtension" target */,
 			);
 			path = ZoneBuddy;
 			sourceTree = "<group>";
@@ -61,6 +114,15 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		6471748E2F41566300CD86C8 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				647174962F41566300CD86C8 /* SwiftUI.framework in Frameworks */,
+				647174942F41566300CD86C8 /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		64D3B0702F4039A800D06A68 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -85,12 +147,23 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		647174922F41566300CD86C8 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				647174932F41566300CD86C8 /* WidgetKit.framework */,
+				647174952F41566300CD86C8 /* SwiftUI.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		64D3B06A2F4039A800D06A68 = {
 			isa = PBXGroup;
 			children = (
 				64D3B0752F4039A800D06A68 /* ZoneBuddy */,
 				64D3B0872F4039AA00D06A68 /* ZoneBuddyTests */,
 				64D3B0912F4039AA00D06A68 /* ZoneBuddyUITests */,
+				647174972F41566300CD86C8 /* ZoneBuddyLiveActivity */,
+				647174922F41566300CD86C8 /* Frameworks */,
 				64D3B0742F4039A800D06A68 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -101,6 +174,7 @@
 				64D3B0732F4039A800D06A68 /* ZoneBuddy.app */,
 				64D3B0842F4039AA00D06A68 /* ZoneBuddyTests.xctest */,
 				64D3B08E2F4039AA00D06A68 /* ZoneBuddyUITests.xctest */,
+				647174912F41566300CD86C8 /* ZoneBuddyLiveActivityExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -108,6 +182,28 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		647174902F41566300CD86C8 /* ZoneBuddyLiveActivityExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 647174A62F41566400CD86C8 /* Build configuration list for PBXNativeTarget "ZoneBuddyLiveActivityExtension" */;
+			buildPhases = (
+				6471748D2F41566300CD86C8 /* Sources */,
+				6471748E2F41566300CD86C8 /* Frameworks */,
+				6471748F2F41566300CD86C8 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				647174972F41566300CD86C8 /* ZoneBuddyLiveActivity */,
+			);
+			name = ZoneBuddyLiveActivityExtension;
+			packageProductDependencies = (
+			);
+			productName = ZoneBuddyLiveActivityExtension;
+			productReference = 647174912F41566300CD86C8 /* ZoneBuddyLiveActivityExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		64D3B0722F4039A800D06A68 /* ZoneBuddy */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 64D3B0972F4039AA00D06A68 /* Build configuration list for PBXNativeTarget "ZoneBuddy" */;
@@ -115,10 +211,12 @@
 				64D3B06F2F4039A800D06A68 /* Sources */,
 				64D3B0702F4039A800D06A68 /* Frameworks */,
 				64D3B0712F4039A800D06A68 /* Resources */,
+				647174AA2F41566400CD86C8 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				647174A42F41566400CD86C8 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				64D3B0752F4039A800D06A68 /* ZoneBuddy */,
@@ -186,6 +284,9 @@
 				LastSwiftUpdateCheck = 2620;
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
+					647174902F41566300CD86C8 = {
+						CreatedOnToolsVersion = 26.2;
+					};
 					64D3B0722F4039A800D06A68 = {
 						CreatedOnToolsVersion = 26.2;
 					};
@@ -216,11 +317,19 @@
 				64D3B0722F4039A800D06A68 /* ZoneBuddy */,
 				64D3B0832F4039AA00D06A68 /* ZoneBuddyTests */,
 				64D3B08D2F4039AA00D06A68 /* ZoneBuddyUITests */,
+				647174902F41566300CD86C8 /* ZoneBuddyLiveActivityExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		6471748F2F41566300CD86C8 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		64D3B0712F4039A800D06A68 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -245,6 +354,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		6471748D2F41566300CD86C8 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		64D3B06F2F4039A800D06A68 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -269,6 +385,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		647174A42F41566400CD86C8 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 647174902F41566300CD86C8 /* ZoneBuddyLiveActivityExtension */;
+			targetProxy = 647174A32F41566400CD86C8 /* PBXContainerItemProxy */;
+		};
 		64D3B0862F4039AA00D06A68 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 64D3B0722F4039A800D06A68 /* ZoneBuddy */;
@@ -282,6 +403,68 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		647174A72F41566400CD86C8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = 5LQ52K2KZM;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ZoneBuddyLiveActivity/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = ZoneBuddyLiveActivity;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.jacksn.ZoneBuddy.ZoneBuddyLiveActivity;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		647174A82F41566400CD86C8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = 5LQ52K2KZM;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ZoneBuddyLiveActivity/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = ZoneBuddyLiveActivity;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.jacksn.ZoneBuddy.ZoneBuddyLiveActivity;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		64D3B0982F4039AA00D06A68 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -562,6 +745,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		647174A62F41566400CD86C8 /* Build configuration list for PBXNativeTarget "ZoneBuddyLiveActivityExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				647174A72F41566400CD86C8 /* Debug */,
+				647174A82F41566400CD86C8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		64D3B06E2F4039A800D06A68 /* Build configuration list for PBXProject "ZoneBuddy" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

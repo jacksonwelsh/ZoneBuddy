@@ -219,7 +219,7 @@ struct WorkoutPlayerViewModelTests {
             timerProvider: timer,
             dateProvider: { currentTime }
         )
-        
+
         vm.start()
         await wait()
         #expect(vm.intervalProgress == 0.0)
@@ -228,5 +228,246 @@ struct WorkoutPlayerViewModelTests {
         timer.fire(at: currentTime)
         await wait()
         #expect(vm.intervalProgress == 0.5)
+    }
+
+    // MARK: - Live Activity Tests
+
+    @Test
+    func startBeginsLiveActivity() async {
+        let currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        let activityMgr = MockActivityManager()
+        let vm = WorkoutPlayerViewModel(
+            intervals: makeIntervals(),
+            timerProvider: timer,
+            activityManager: activityMgr,
+            workoutName: "Test Ride",
+            dateProvider: { currentTime }
+        )
+
+        vm.start()
+        await wait()
+
+        #expect(activityMgr.startCalled == true)
+        #expect(activityMgr.startAttributes?.workoutName == "Test Ride")
+        #expect(activityMgr.startAttributes?.totalIntervals == 3)
+        #expect(activityMgr.startState?.currentLabel == "Zone 2")
+        #expect(activityMgr.startState?.isRunning == true)
+        #expect(activityMgr.startState?.intervalEndDate != nil)
+    }
+
+    @Test
+    func pauseUpdatesActivityWithNilEndDate() async {
+        let currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        let activityMgr = MockActivityManager()
+        let vm = WorkoutPlayerViewModel(
+            intervals: makeIntervals(),
+            timerProvider: timer,
+            activityManager: activityMgr,
+            dateProvider: { currentTime }
+        )
+
+        vm.start()
+        await wait()
+
+        vm.pause()
+
+        #expect(activityMgr.lastUpdateState?.intervalEndDate == nil)
+        #expect(activityMgr.lastUpdateState?.isRunning == false)
+    }
+
+    @Test
+    func resumeUpdatesActivityWithEndDate() async {
+        var currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        let activityMgr = MockActivityManager()
+        let vm = WorkoutPlayerViewModel(
+            intervals: makeIntervals(),
+            timerProvider: timer,
+            activityManager: activityMgr,
+            dateProvider: { currentTime }
+        )
+
+        vm.start()
+        await wait()
+
+        vm.pause()
+
+        currentTime.addTimeInterval(50)
+        vm.resume()
+        await wait()
+
+        #expect(activityMgr.lastUpdateState?.intervalEndDate != nil)
+        #expect(activityMgr.lastUpdateState?.isRunning == true)
+    }
+
+    @Test
+    func intervalAdvanceUpdatesActivity() async {
+        var currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        let activityMgr = MockActivityManager()
+        let vm = WorkoutPlayerViewModel(
+            intervals: makeIntervals(),
+            timerProvider: timer,
+            activityManager: activityMgr,
+            dateProvider: { currentTime }
+        )
+
+        vm.start()
+        await wait()
+
+        let updateCountBefore = activityMgr.updateCallCount
+
+        currentTime.addTimeInterval(5)
+        timer.fire(at: currentTime)
+        await wait()
+
+        #expect(activityMgr.updateCallCount > updateCountBefore)
+        #expect(activityMgr.lastUpdateState?.currentLabel == "Zone 4")
+        #expect(activityMgr.lastUpdateState?.currentIntervalIndex == 1)
+    }
+
+    @Test
+    func workoutFinishEndsActivity() async {
+        var currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        let activityMgr = MockActivityManager()
+        let vm = WorkoutPlayerViewModel(
+            intervals: makeIntervals(),
+            timerProvider: timer,
+            activityManager: activityMgr,
+            dateProvider: { currentTime }
+        )
+
+        vm.start()
+        await wait()
+
+        currentTime.addTimeInterval(18)
+        timer.fire(at: currentTime)
+        await wait()
+
+        #expect(activityMgr.endCalled == true)
+        #expect(activityMgr.endState?.isFinished == true)
+        #expect(activityMgr.endDismissalBehavior == .afterDelay(60))
+    }
+
+    @Test
+    func endActivityCalledOnDismiss() async {
+        let timer = MockTimerProvider()
+        let activityMgr = MockActivityManager()
+        let vm = WorkoutPlayerViewModel(
+            intervals: makeIntervals(),
+            timerProvider: timer,
+            activityManager: activityMgr
+        )
+
+        vm.start()
+        await wait()
+
+        vm.pause()
+        vm.endActivity()
+
+        #expect(activityMgr.endCalled == true)
+        #expect(activityMgr.endDismissalBehavior == .immediate)
+    }
+
+    @Test
+    func noActivityStartedForEmptyIntervals() {
+        let timer = MockTimerProvider()
+        let activityMgr = MockActivityManager()
+        let vm = WorkoutPlayerViewModel(
+            intervals: [],
+            timerProvider: timer,
+            activityManager: activityMgr
+        )
+
+        vm.start()
+
+        #expect(activityMgr.startCalled == false)
+    }
+
+    // MARK: - Speech Cue Tests
+
+    @Test
+    func startAnnouncesFirstZone() async {
+        let currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        let speech = MockSpeechCueProvider()
+        let vm = WorkoutPlayerViewModel(
+            intervals: makeIntervals(),
+            timerProvider: timer,
+            speechCueProvider: speech,
+            dateProvider: { currentTime }
+        )
+
+        vm.start()
+        await wait()
+
+        #expect(speech.spokenTexts == ["Zone 2"])
+    }
+
+    @Test
+    func intervalAdvanceSpeaksNewZone() async {
+        var currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        let speech = MockSpeechCueProvider()
+        let vm = WorkoutPlayerViewModel(
+            intervals: makeIntervals(),
+            timerProvider: timer,
+            speechCueProvider: speech,
+            dateProvider: { currentTime }
+        )
+
+        vm.start()
+        await wait()
+
+        currentTime.addTimeInterval(5)
+        timer.fire(at: currentTime)
+        await wait()
+
+        #expect(speech.spokenTexts == ["Zone 2", "Zone 4"])
+    }
+
+    @Test
+    func noSpeechWhenAudioCuesDisabled() async {
+        let currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        let speech = MockSpeechCueProvider()
+        let vm = WorkoutPlayerViewModel(
+            intervals: makeIntervals(),
+            timerProvider: timer,
+            speechCueProvider: speech,
+            dateProvider: { currentTime }
+        )
+
+        vm.audioCuesEnabled = false
+        vm.start()
+        await wait()
+
+        #expect(speech.spokenTexts.isEmpty)
+    }
+
+    @Test
+    func stopClearsActiveSpeech() async {
+        var currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        let speech = MockSpeechCueProvider()
+        let vm = WorkoutPlayerViewModel(
+            intervals: makeIntervals(),
+            timerProvider: timer,
+            speechCueProvider: speech,
+            dateProvider: { currentTime }
+        )
+
+        vm.start()
+        await wait()
+
+        // Finish the workout
+        currentTime.addTimeInterval(18)
+        timer.fire(at: currentTime)
+        await wait()
+
+        #expect(speech.stopCalled == true)
     }
 }

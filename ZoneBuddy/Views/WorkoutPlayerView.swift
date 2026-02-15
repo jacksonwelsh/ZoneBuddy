@@ -11,6 +11,7 @@ struct WorkoutPlayerView: View {
         _viewModel = State(initialValue: WorkoutPlayerViewModel(
             intervals: intervals,
             timerProvider: LiveTimerProvider(),
+            workoutName: workoutName,
             transitionWarningDuration: transitionWarningDuration
         ))
     }
@@ -94,6 +95,7 @@ struct WorkoutPlayerView: View {
             HStack(spacing: 40) {
                 Button {
                     viewModel.pause()
+                    viewModel.endActivity()
                     dismiss()
                 } label: {
                     Image(systemName: "xmark.circle.fill")
@@ -105,6 +107,14 @@ struct WorkoutPlayerView: View {
                     viewModel.togglePlayPause()
                 } label: {
                     Image(systemName: viewModel.isRunning ? "pause.circle.fill" : "play.circle.fill")
+                        .font(.system(size: 44))
+                        .foregroundStyle(viewModel.currentForegroundColor.opacity(0.6))
+                }
+
+                Button {
+                    viewModel.audioCuesEnabled.toggle()
+                } label: {
+                    Image(systemName: viewModel.audioCuesEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill")
                         .font(.system(size: 44))
                         .foregroundStyle(viewModel.currentForegroundColor.opacity(0.6))
                 }
@@ -130,6 +140,7 @@ struct WorkoutPlayerView: View {
                 .foregroundStyle(.white.opacity(0.8))
 
             Button("Done") {
+                viewModel.endActivity()
                 dismiss()
             }
             .font(.title3)

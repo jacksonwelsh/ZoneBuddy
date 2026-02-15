@@ -48,7 +48,7 @@ struct WorkoutTests {
         try context.save()
 
         let fetched = try context.fetch(FetchDescriptor<Workout>())
-        #expect(fetched.first?.intervals.count == 2)
+        #expect(fetched.first?.intervals?.count == 2)
         #expect(fetched.first?.totalDuration == 420)
     }
 

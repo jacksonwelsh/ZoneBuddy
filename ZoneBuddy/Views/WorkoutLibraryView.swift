@@ -11,13 +11,21 @@ struct WorkoutLibraryView: View {
             List {
                 ForEach(workouts) { workout in
                     NavigationLink(value: workout) {
-                        VStack(alignment: .leading) {
-                            Text(workout.name)
-                                .font(.headline)
-                            Text("\(workout.intervals?.count ?? 0) intervals \u{2022} \(workout.totalDuration.formattedDuration)")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 8) {
+                            VStack(alignment: .leading) {
+                                Text(workout.name)
+                                    .font(.headline)
+                                Text("\((workout.intervals ?? []).count) intervals \u{2022} \(workout.totalDuration.formattedDuration)")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                            
+                            WorkoutProgressionBar(
+                                intervals: workout.intervals ?? [],
+                                totalDuration: workout.totalDuration
+                            )
                         }
+                        .padding(.vertical, 4)
                     }
                 }
                 .onDelete { offsets in

@@ -11,6 +11,7 @@ final class WorkoutPlayerViewModel {
     private(set) var isFinished: Bool = false
     private(set) var showTransitionBanner: Bool = false
     var showTimer: Bool = true
+    var audioCuesEnabled: Bool = true
 
     // MARK: - Computed
 
@@ -71,23 +72,33 @@ final class WorkoutPlayerViewModel {
 
     let intervals: [Interval]
     private let timerProvider: TimerProviding
+    private let activityManager: ActivityManaging
+    private let speechCueProvider: SpeechCueProviding
+    private let workoutName: String
     private let transitionWarningDuration: Int
     private let dateProvider: @Sendable () -> Date
-    
+
     private var timerTask: Task<Void, Never>?
     private var workoutStartDate: Date?
     private var totalSecondsAccumulatedBeforePause: TimeInterval = 0
+    private var activityHasStarted: Bool = false
 
     // MARK: - Init
 
     init(
         intervals: [Interval],
         timerProvider: TimerProviding,
+        activityManager: ActivityManaging = LiveActivityManager(),
+        speechCueProvider: SpeechCueProviding = LiveSpeechCueProvider(),
+        workoutName: String = "",
         transitionWarningDuration: Int = 10,
         dateProvider: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.intervals = intervals
         self.timerProvider = timerProvider
+        self.activityManager = activityManager
+        self.speechCueProvider = speechCueProvider
+        self.workoutName = workoutName
         self.transitionWarningDuration = transitionWarningDuration
         self.dateProvider = dateProvider
         if let first = intervals.first {
@@ -97,33 +108,56 @@ final class WorkoutPlayerViewModel {
 
     deinit {
         timerTask?.cancel()
+        speechCueProvider.stop()
     }
 
     // MARK: - Actions
 
     func start() {
         guard !isRunning && !isFinished && !intervals.isEmpty else { return }
-        
+
         workoutStartDate = dateProvider()
         isRunning = true
-        
+
+        if !activityHasStarted {
+            activityHasStarted = true
+            let attributes = WorkoutActivityAttributes(
+                workoutName: workoutName,
+                totalIntervals: intervals.count
+            )
+            activityManager.startActivity(attributes: attributes, state: makeContentState())
+            speakCurrentLabel()
+        } else {
+            activityManager.updateActivity(state: makeContentState())
+        }
+
         timerTask?.cancel()
         timerTask = Task { @MainActor in
             let ticker = timerProvider.ticks(every: .seconds(1))
-            
+
             for await currentTime in ticker {
                 if Task.isCancelled || !isRunning { break }
                 guard let startDate = workoutStartDate else { break }
-                
+
                 let segmentElapsed = currentTime.timeIntervalSince(startDate)
                 let totalElapsed = segmentElapsed + totalSecondsAccumulatedBeforePause
-                
+
+                let previousIndex = self.currentIntervalIndex
                 self.totalElapsedSeconds = Int(totalElapsed)
                 self.recalculateIntervalState(totalElapsed: totalElapsed)
-                
+
                 if self.isFinished {
+                    self.activityManager.endActivity(
+                        state: self.makeContentState(),
+                        dismissalBehavior: .afterDelay(60)
+                    )
                     stopWorkout()
                     break
+                }
+
+                if self.currentIntervalIndex != previousIndex {
+                    self.activityManager.updateActivity(state: self.makeContentState())
+                    self.speakCurrentLabel()
                 }
             }
         }
@@ -131,15 +165,19 @@ final class WorkoutPlayerViewModel {
 
     func pause() {
         guard isRunning else { return }
-        
+
         if let startDate = workoutStartDate {
             totalSecondsAccumulatedBeforePause += dateProvider().timeIntervalSince(startDate)
         }
-        
+
         isRunning = false
         workoutStartDate = nil
         timerTask?.cancel()
         timerTask = nil
+
+        if activityHasStarted {
+            activityManager.updateActivity(state: makeContentState())
+        }
     }
 
     func resume() {
@@ -159,6 +197,37 @@ final class WorkoutPlayerViewModel {
         timerTask?.cancel()
         timerTask = nil
         workoutStartDate = nil
+        speechCueProvider.stop()
+    }
+
+    func endActivity() {
+        guard activityHasStarted else { return }
+        activityManager.endActivity(state: makeContentState(), dismissalBehavior: .immediate)
+        activityHasStarted = false
+    }
+
+    // MARK: - Activity State
+
+    private func makeContentState() -> WorkoutActivityAttributes.ContentState {
+        .init(
+            currentZoneRawValue: currentInterval?.zone?.rawValue,
+            currentLabel: currentLabel,
+            currentIntervalIndex: currentIntervalIndex,
+            nextZoneRawValue: nextInterval?.zone?.rawValue,
+            upcomingLabel: upcomingLabel,
+            intervalEndDate: isRunning ? dateProvider().addingTimeInterval(TimeInterval(secondsRemaining)) : nil,
+            secondsRemaining: secondsRemaining,
+            intervalProgress: intervalProgress,
+            isRunning: isRunning,
+            isFinished: isFinished
+        )
+    }
+
+    private func speakCurrentLabel() {
+        guard audioCuesEnabled else { return }
+        let label = currentLabel
+        guard !label.isEmpty else { return }
+        speechCueProvider.speak(label)
     }
 
     private func recalculateIntervalState(totalElapsed: TimeInterval) {
