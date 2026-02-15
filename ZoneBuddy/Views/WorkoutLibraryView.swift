@@ -21,7 +21,7 @@ struct WorkoutLibraryView: View {
                             }
                             
                             WorkoutProgressionBar(
-                                intervals: workout.intervals ?? [],
+                                intervals: workout.sortedIntervals,
                                 totalDuration: workout.totalDuration
                             )
                         }

@@ -8,7 +8,7 @@ struct WorkoutProgressionBar: View {
         GeometryReader { geometry in
             HStack(spacing: 0) {
                 if totalDuration > 0 {
-                    ForEach(intervals.sorted(by: { $0.sortOrder < $1.sortOrder })) { interval in
+                    ForEach(intervals) { interval in
                         Rectangle()
                             .fill(interval.zone?.color ?? Color.gray)
                             .frame(width: geometry.size.width * CGFloat(interval.duration) / CGFloat(totalDuration))
