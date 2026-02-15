@@ -6,11 +6,12 @@ struct WorkoutPlayerView: View {
 
     let workoutName: String
 
-    init(intervals: [Interval], workoutName: String) {
+    init(intervals: [Interval], workoutName: String, transitionWarningDuration: Int = 10) {
         self.workoutName = workoutName
         _viewModel = State(initialValue: WorkoutPlayerViewModel(
             intervals: intervals,
-            timerProvider: LiveTimerProvider()
+            timerProvider: LiveTimerProvider(),
+            transitionWarningDuration: transitionWarningDuration
         ))
     }
 

@@ -21,6 +21,19 @@ struct WorkoutTests {
         let fetched = try context.fetch(FetchDescriptor<Workout>())
         #expect(fetched.count == 1)
         #expect(fetched.first?.name == "Test Ride")
+        #expect(fetched.first?.transitionWarningDuration == 10)
+    }
+
+    @Test
+    func customTransitionWarning() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+
+        let workout = Workout(name: "Test", transitionWarningDuration: 5)
+        context.insert(workout)
+        try context.save()
+
+        #expect(workout.transitionWarningDuration == 5)
     }
 
     @Test

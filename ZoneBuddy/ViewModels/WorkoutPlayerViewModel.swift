@@ -71,41 +71,79 @@ final class WorkoutPlayerViewModel {
 
     let intervals: [Interval]
     private let timerProvider: TimerProviding
-    private var timerCancellable: TimerCancellable?
-    private let transitionWarningSeconds: Int = 10
+    private let transitionWarningDuration: Int
+    private let dateProvider: @Sendable () -> Date
+    
+    private var timerTask: Task<Void, Never>?
+    private var workoutStartDate: Date?
+    private var totalSecondsAccumulatedBeforePause: TimeInterval = 0
 
     // MARK: - Init
 
-    init(intervals: [Interval], timerProvider: TimerProviding) {
+    init(
+        intervals: [Interval],
+        timerProvider: TimerProviding,
+        transitionWarningDuration: Int = 10,
+        dateProvider: @escaping @Sendable () -> Date = { Date() }
+    ) {
         self.intervals = intervals
         self.timerProvider = timerProvider
+        self.transitionWarningDuration = transitionWarningDuration
+        self.dateProvider = dateProvider
         if let first = intervals.first {
             self.secondsRemaining = first.duration
         }
     }
 
     deinit {
-        timerCancellable?.cancel()
+        timerTask?.cancel()
     }
 
     // MARK: - Actions
 
     func start() {
-        guard !intervals.isEmpty else { return }
+        guard !isRunning && !isFinished && !intervals.isEmpty else { return }
+        
+        workoutStartDate = dateProvider()
         isRunning = true
-        startTimer()
+        
+        timerTask?.cancel()
+        timerTask = Task { @MainActor in
+            let ticker = timerProvider.ticks(every: .seconds(1))
+            
+            for await currentTime in ticker {
+                if Task.isCancelled || !isRunning { break }
+                guard let startDate = workoutStartDate else { break }
+                
+                let segmentElapsed = currentTime.timeIntervalSince(startDate)
+                let totalElapsed = segmentElapsed + totalSecondsAccumulatedBeforePause
+                
+                self.totalElapsedSeconds = Int(totalElapsed)
+                self.recalculateIntervalState(totalElapsed: totalElapsed)
+                
+                if self.isFinished {
+                    stopWorkout()
+                    break
+                }
+            }
+        }
     }
 
     func pause() {
+        guard isRunning else { return }
+        
+        if let startDate = workoutStartDate {
+            totalSecondsAccumulatedBeforePause += dateProvider().timeIntervalSince(startDate)
+        }
+        
         isRunning = false
-        timerCancellable?.cancel()
-        timerCancellable = nil
+        workoutStartDate = nil
+        timerTask?.cancel()
+        timerTask = nil
     }
 
     func resume() {
-        guard !isFinished else { return }
-        isRunning = true
-        startTimer()
+        start()
     }
 
     func togglePlayPause() {
@@ -116,44 +154,32 @@ final class WorkoutPlayerViewModel {
         }
     }
 
-    // MARK: - Timer Logic
-
-    private func startTimer() {
-        timerCancellable?.cancel()
-        timerCancellable = timerProvider.scheduledTimer(interval: 1.0) { [self] in
-            self.tick()
-        }
+    private func stopWorkout() {
+        isRunning = false
+        timerTask?.cancel()
+        timerTask = nil
+        workoutStartDate = nil
     }
 
-    func tick() {
-        guard isRunning, !isFinished else { return }
-
-        totalElapsedSeconds += 1
-        secondsRemaining -= 1
-
-        if secondsRemaining <= transitionWarningSeconds && nextInterval != nil {
-            showTransitionBanner = true
-        } else {
-            showTransitionBanner = false
+    private func recalculateIntervalState(totalElapsed: TimeInterval) {
+        var timeMarker: TimeInterval = 0
+        
+        for (index, interval) in intervals.enumerated() {
+            let intervalDuration = TimeInterval(interval.duration)
+            let intervalEnd = timeMarker + intervalDuration
+            
+            if totalElapsed < intervalEnd {
+                currentIntervalIndex = index
+                secondsRemaining = Int(ceil(intervalEnd - totalElapsed))
+                
+                showTransitionBanner = (secondsRemaining <= transitionWarningDuration && index < intervals.count - 1)
+                return
+            }
+            timeMarker = intervalEnd
         }
-
-        if secondsRemaining <= 0 {
-            advanceToNextInterval()
-        }
-    }
-
-    private func advanceToNextInterval() {
-        showTransitionBanner = false
-
-        let nextIndex = currentIntervalIndex + 1
-        if nextIndex < intervals.count {
-            currentIntervalIndex = nextIndex
-            secondsRemaining = intervals[nextIndex].duration
-        } else {
-            isRunning = false
-            isFinished = true
-            timerCancellable?.cancel()
-            timerCancellable = nil
-        }
+        
+        isFinished = true
+        isRunning = false
+        secondsRemaining = 0
     }
 }

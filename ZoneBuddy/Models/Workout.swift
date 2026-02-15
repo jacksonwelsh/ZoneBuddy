@@ -5,14 +5,16 @@ import SwiftData
 final class Workout {
     var name: String
     var createdAt: Date
+    var transitionWarningDuration: Int = 10
 
     @Relationship(deleteRule: .cascade, inverse: \Interval.workout)
     var intervals: [Interval]
 
-    init(name: String, intervals: [Interval] = []) {
+    init(name: String, intervals: [Interval] = [], transitionWarningDuration: Int = 10) {
         self.name = name
         self.createdAt = Date()
         self.intervals = intervals
+        self.transitionWarningDuration = transitionWarningDuration
     }
 
     var sortedIntervals: [Interval] {

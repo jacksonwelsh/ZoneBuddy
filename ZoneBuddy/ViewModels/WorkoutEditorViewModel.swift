@@ -5,6 +5,7 @@ import SwiftData
 final class WorkoutEditorViewModel {
     var workout: Workout
     var workoutName: String
+    var transitionWarningDuration: Int
     var intervals: [Interval]
 
     private let modelContext: ModelContext
@@ -12,6 +13,7 @@ final class WorkoutEditorViewModel {
     init(workout: Workout, modelContext: ModelContext) {
         self.workout = workout
         self.workoutName = workout.name
+        self.transitionWarningDuration = workout.transitionWarningDuration
         self.intervals = workout.sortedIntervals
         self.modelContext = modelContext
     }
@@ -48,9 +50,14 @@ final class WorkoutEditorViewModel {
         saveChanges()
     }
 
-    func updateName() {
+    func updateWorkoutSettings() {
         workout.name = workoutName
+        workout.transitionWarningDuration = transitionWarningDuration
         saveChanges()
+    }
+
+    func updateName() {
+        updateWorkoutSettings()
     }
 
     func updateInterval(_ interval: Interval, zone: PowerZone?, duration: Int) {

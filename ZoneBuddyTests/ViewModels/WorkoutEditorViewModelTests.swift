@@ -77,6 +77,22 @@ struct WorkoutEditorViewModelTests {
     }
 
     @Test
+    func updateWorkoutSettings() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let workout = Workout(name: "Old Name", transitionWarningDuration: 10)
+        context.insert(workout)
+
+        let vm = WorkoutEditorViewModel(workout: workout, modelContext: context)
+        vm.workoutName = "New Name"
+        vm.transitionWarningDuration = 5
+        vm.updateWorkoutSettings()
+
+        #expect(workout.name == "New Name")
+        #expect(workout.transitionWarningDuration == 5)
+    }
+
+    @Test
     func updateName() throws {
         let container = try makeContainer()
         let context = container.mainContext

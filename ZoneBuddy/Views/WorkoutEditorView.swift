@@ -69,6 +69,17 @@ struct WorkoutEditorView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+
+            Section("Settings") {
+                Stepper(value: $viewModel.transitionWarningDuration, in: 0...30) {
+                    HStack {
+                        Text("Transition Warning")
+                        Spacer()
+                        Text("\(viewModel.transitionWarningDuration)s")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
         }
         .navigationTitle("Edit Workout")
         .toolbar {
@@ -97,7 +108,8 @@ struct WorkoutEditorView: View {
         .navigationDestination(isPresented: $navigateToPlayer) {
             WorkoutPlayerView(
                 intervals: viewModel.intervals,
-                workoutName: viewModel.workoutName
+                workoutName: viewModel.workoutName,
+                transitionWarningDuration: viewModel.transitionWarningDuration
             )
         }
         .sheet(isPresented: $showingAddInterval) {
@@ -112,7 +124,7 @@ struct WorkoutEditorView: View {
             }
         }
         .onDisappear {
-            viewModel.updateName()
+            viewModel.updateWorkoutSettings()
         }
     }
 

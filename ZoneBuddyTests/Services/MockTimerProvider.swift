@@ -2,36 +2,23 @@ import Foundation
 @testable import ZoneBuddy
 
 final class MockTimerProvider: TimerProviding, @unchecked Sendable {
-    private var handler: (@MainActor @Sendable () -> Void)?
+    private var continuation: AsyncStream<Date>.Continuation?
     private(set) var timerStarted = false
 
-    func scheduledTimer(
-        interval: TimeInterval,
-        handler: @escaping @MainActor @Sendable () -> Void
-    ) -> TimerCancellable {
-        self.handler = handler
+    func ticks(every interval: Duration) -> any AsyncSequence<Date, Never> {
+        let (stream, continuation) = AsyncStream.makeStream(of: Date.self)
+        self.continuation = continuation
         self.timerStarted = true
-        return MockTimerCancellable { self.handler = nil }
+        return stream
     }
 
     @MainActor
-    func fire(times count: Int = 1) {
-        for _ in 0..<count {
-            handler?()
-        }
+    func fire(at date: Date = Date()) {
+        continuation?.yield(date)
     }
-}
-
-final class MockTimerCancellable: TimerCancellable, @unchecked Sendable {
-    private let onCancel: () -> Void
-    private(set) var wasCancelled = false
-
-    init(onCancel: @escaping () -> Void) {
-        self.onCancel = onCancel
-    }
-
-    func cancel() {
-        wasCancelled = true
-        onCancel()
+    
+    @MainActor
+    func fire(after seconds: TimeInterval, from baseDate: Date = Date()) {
+        continuation?.yield(baseDate.addingTimeInterval(seconds))
     }
 }
