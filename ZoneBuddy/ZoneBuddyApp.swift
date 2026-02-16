@@ -19,12 +19,17 @@ struct ZoneBuddyApp: App {
             Workout.self,
             Interval.self,
         ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+        let modelConfiguration = ModelConfiguration(
+            schema: schema,
+            cloudKitDatabase: .automatic
+        )
 
         do {
             return try ModelContainer(for: schema, configurations: [modelConfiguration])
         } catch {
-            fatalError("Could not create ModelContainer: \(error)")
+            // Fallback to local-only if CloudKit fails
+            let fallback = ModelConfiguration(schema: schema, cloudKitDatabase: .none)
+            return try! ModelContainer(for: schema, configurations: [fallback])
         }
     }()
 
