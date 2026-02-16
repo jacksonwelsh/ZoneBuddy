@@ -3,6 +3,7 @@ import SwiftUI
 struct WorkoutPlayerView: View {
     @State private var viewModel: WorkoutPlayerViewModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
 
     let workoutName: String
 
@@ -52,7 +53,19 @@ struct WorkoutPlayerView: View {
         }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
-            viewModel.pause()
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            switch newPhase {
+            case .active:
+                UIApplication.shared.isIdleTimerDisabled = true
+                if viewModel.isRunning {
+                    viewModel.recalculateOnForeground()
+                }
+            case .background, .inactive:
+                UIApplication.shared.isIdleTimerDisabled = false
+            @unknown default:
+                break
+            }
         }
         .onTapGesture {
             viewModel.showTimer.toggle()

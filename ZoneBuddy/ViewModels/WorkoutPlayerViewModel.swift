@@ -154,8 +154,8 @@ final class WorkoutPlayerViewModel {
                 }
 
                 if self.currentIntervalIndex != previousIndex {
-                    self.activityManager.updateActivity(state: self.makeContentState())
                     self.speakCurrentLabel()
+                    self.activityManager.updateActivity(state: self.makeContentState())
                 }
             }
         }
@@ -198,6 +198,15 @@ final class WorkoutPlayerViewModel {
         speechCueProvider.stop()
     }
 
+    func recalculateOnForeground() {
+        guard isRunning, let startDate = workoutStartDate else { return }
+        let segmentElapsed = dateProvider().timeIntervalSince(startDate)
+        let totalElapsed = segmentElapsed + totalSecondsAccumulatedBeforePause
+        totalElapsedSeconds = Int(totalElapsed)
+        recalculateIntervalState(totalElapsed: totalElapsed)
+        activityManager.updateActivity(state: makeContentState())
+    }
+
     func endActivity() {
         guard activityHasStarted else { return }
         activityManager.endActivity(state: makeContentState(), dismissalBehavior: .immediate)
@@ -213,6 +222,7 @@ final class WorkoutPlayerViewModel {
             currentIntervalIndex: currentIntervalIndex,
             nextZoneRawValue: nextInterval?.zone?.rawValue,
             upcomingLabel: upcomingLabel,
+            intervalStartDate: isRunning ? dateProvider().addingTimeInterval(TimeInterval(secondsRemaining - (currentInterval?.duration ?? 0))) : nil,
             intervalEndDate: isRunning ? dateProvider().addingTimeInterval(TimeInterval(secondsRemaining)) : nil,
             secondsRemaining: secondsRemaining,
             intervalProgress: intervalProgress,

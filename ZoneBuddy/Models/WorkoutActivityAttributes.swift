@@ -11,6 +11,7 @@ struct WorkoutActivityAttributes: ActivityAttributes {
         let currentIntervalIndex: Int
         let nextZoneRawValue: Int?
         let upcomingLabel: String
+        let intervalStartDate: Date?
         let intervalEndDate: Date?
         let secondsRemaining: Int
         let intervalProgress: Double

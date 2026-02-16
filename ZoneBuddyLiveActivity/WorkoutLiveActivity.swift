@@ -64,8 +64,16 @@ struct WorkoutLiveActivity: Widget {
                 timerText(state: state)
                     .font(.system(.title, design: .monospaced))
 
-                ProgressView(value: state.intervalProgress)
+                if let startDate = state.intervalStartDate, let endDate = state.intervalEndDate, !state.isFinished {
+                    ProgressView(
+                        timerInterval: startDate...endDate,
+                        countsDown: false
+                    )
                     .tint(currentColor)
+                } else {
+                    ProgressView(value: state.isFinished ? 1.0 : 0.0)
+                        .tint(currentColor)
+                }
 
                 if !state.upcomingLabel.isEmpty {
                     let nextPowerZone = PowerZone(rawValue: state.nextZoneRawValue ?? 1)
@@ -123,8 +131,16 @@ struct WorkoutLiveActivity: Widget {
         let currentPowerZone = PowerZone(rawValue: state.currentZoneRawValue ?? 1)
         
         VStack(spacing: 8) {
-            ProgressView(value: state.intervalProgress)
+            if let startDate = state.intervalStartDate, let endDate = state.intervalEndDate, !state.isFinished {
+                ProgressView(
+                    timerInterval: startDate...endDate,
+                    countsDown: false
+                )
                 .tint(currentPowerZone?.color ?? .gray)
+            } else {
+                ProgressView(value: state.isFinished ? 1.0 : 0.0)
+                    .tint(currentPowerZone?.color ?? .gray)
+            }
 
             if !state.upcomingLabel.isEmpty {
                 let nextPowerZone = PowerZone(rawValue: state.nextZoneRawValue ?? 1)
