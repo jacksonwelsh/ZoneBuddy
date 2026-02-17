@@ -2,6 +2,7 @@ import SwiftUI
 
 struct WorkoutPlayerView: View {
     @State private var viewModel: WorkoutPlayerViewModel
+    @State private var showExitConfirmation = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
 
@@ -42,6 +43,30 @@ struct WorkoutPlayerView: View {
             }
             .animation(.easeInOut(duration: 0.4), value: viewModel.showTransitionBanner)
             .allowsHitTesting(false)
+
+            if !viewModel.isFinished {
+                VStack {
+                    HStack {
+                        exitButton
+                        Spacer()
+                    }
+                    .overlay {
+                        Text(workoutName)
+                            .font(.title3)
+                            .foregroundStyle(viewModel.currentForegroundColor.opacity(0.7))
+                    }
+                    Spacer()
+                }
+                .padding(.top, 12)
+                .padding(.horizontal, 16)
+            }
+        }
+        .confirmationDialog("End Workout?", isPresented: $showExitConfirmation, titleVisibility: .visible) {
+            Button("End Workout", role: .destructive) {
+                viewModel.pause()
+                viewModel.endActivity()
+                dismiss()
+            }
         }
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
@@ -81,9 +106,9 @@ struct WorkoutPlayerView: View {
 
     private var activeWorkoutOverlay: some View {
         VStack(spacing: 20) {
-            Text(workoutName)
-                .font(.title3)
-                .foregroundStyle(viewModel.currentForegroundColor.opacity(0.7))
+            // Reserve space matching the exit button row so content stays centered
+            Color.clear
+                .frame(height: 44)
 
             Spacer()
 
@@ -112,36 +137,48 @@ struct WorkoutPlayerView: View {
 
             Spacer()
 
-            HStack(spacing: 40) {
-                Button {
-                    viewModel.pause()
-                    viewModel.endActivity()
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 44))
-                        .foregroundStyle(viewModel.currentForegroundColor.opacity(0.6))
-                }
-
+            HStack(spacing: 24) {
                 Button {
                     viewModel.togglePlayPause()
                 } label: {
-                    Image(systemName: viewModel.isRunning ? "pause.circle.fill" : "play.circle.fill")
-                        .font(.system(size: 44))
-                        .foregroundStyle(viewModel.currentForegroundColor.opacity(0.6))
+                    Image(systemName: viewModel.isRunning ? "pause.fill" : "play.fill")
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundStyle(.black)
+                        .frame(width: 56, height: 56)
+                        .background(.white.opacity(0.8), in: .circle)
                 }
+                .buttonStyle(.plain)
+                .glassEffect(.regular.interactive(), in: .circle)
 
                 Button {
                     viewModel.audioCuesEnabled.toggle()
                 } label: {
                     Image(systemName: viewModel.audioCuesEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill")
-                        .font(.system(size: 44))
-                        .foregroundStyle(viewModel.currentForegroundColor.opacity(0.6))
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(.black)
+                        .frame(width: 56, height: 56)
+                        .background(.white.opacity(0.8), in: .circle)
                 }
+                .buttonStyle(.plain)
+                .glassEffect(.regular.interactive(), in: .circle)
             }
             .padding(.bottom, 20)
         }
         .padding()
+    }
+
+    private var exitButton: some View {
+        Button {
+            showExitConfirmation = true
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(.black)
+                .frame(width: 44, height: 44)
+                .background(.white.opacity(0.8), in: .circle)
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: .circle)
     }
 
     private var finishedOverlay: some View {

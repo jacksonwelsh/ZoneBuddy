@@ -11,7 +11,7 @@ final class WorkoutPlayerViewModel {
     private(set) var isFinished: Bool = false
     private(set) var showTransitionBanner: Bool = false
     var showTimer: Bool = true
-    var audioCuesEnabled: Bool = true
+    var audioCuesEnabled: Bool = SettingsManager.shared.audioCuesEnabled
 
     // MARK: - Computed
 

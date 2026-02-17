@@ -24,12 +24,11 @@ struct WorkoutLiveActivity: Widget {
                     expandedBottom(context: context)
                 }
             } compactLeading: {
-                HStack(spacing: 2) {
-                    zoneColorDot(for: PowerZone(rawValue: context.state.currentZoneRawValue ?? 1))
-                    zoneName(for: PowerZone(rawValue: context.state.currentZoneRawValue ?? 1))
-                }
+                minimalView(state: context.state)
             } compactTrailing: {
                 timerText(state: context.state)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentMargins(-5)
             } minimal: {
                 minimalView(state: context.state)
             }
@@ -41,8 +40,8 @@ struct WorkoutLiveActivity: Widget {
     @ViewBuilder
     private func lockScreenView(context: ActivityViewContext<WorkoutActivityAttributes>) -> some View {
         let state = context.state
-        let currentPowerZone = PowerZone(rawValue: state.currentZoneRawValue ?? 1)
-        let currentColor = currentPowerZone?.color ?? .gray
+        let currentPowerZone = state.currentZoneRawValue.flatMap(PowerZone.init(rawValue:))
+        let currentColor = currentPowerZone?.color ?? .orange
 
         HStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
@@ -76,10 +75,10 @@ struct WorkoutLiveActivity: Widget {
                 }
 
                 if !state.upcomingLabel.isEmpty {
-                    let nextPowerZone = PowerZone(rawValue: state.nextZoneRawValue ?? 1)
+                    let nextPowerZone = state.nextZoneRawValue.flatMap(PowerZone.init(rawValue:))
                     HStack(spacing: 4) {
                         Circle()
-                            .fill(nextPowerZone?.color ?? .gray)
+                            .fill(nextPowerZone?.color ?? .orange)
                             .frame(width: 8, height: 8)
                         Text("Next: \(state.upcomingLabel)")
                             .font(.caption2)
@@ -128,25 +127,25 @@ struct WorkoutLiveActivity: Widget {
     @ViewBuilder
     private func expandedBottom(context: ActivityViewContext<WorkoutActivityAttributes>) -> some View {
         let state = context.state
-        let currentPowerZone = PowerZone(rawValue: state.currentZoneRawValue ?? 1)
-        
+        let currentPowerZone = state.currentZoneRawValue.flatMap(PowerZone.init(rawValue:))
+
         VStack(spacing: 8) {
             if let startDate = state.intervalStartDate, let endDate = state.intervalEndDate, !state.isFinished {
                 ProgressView(
                     timerInterval: startDate...endDate,
                     countsDown: false
                 )
-                .tint(currentPowerZone?.color ?? .gray)
+                .tint(currentPowerZone?.color ?? .orange)
             } else {
                 ProgressView(value: state.isFinished ? 1.0 : 0.0)
-                    .tint(currentPowerZone?.color ?? .gray)
+                    .tint(currentPowerZone?.color ?? .orange)
             }
 
             if !state.upcomingLabel.isEmpty {
-                let nextPowerZone = PowerZone(rawValue: state.nextZoneRawValue ?? 1)
+                let nextPowerZone = state.nextZoneRawValue.flatMap(PowerZone.init(rawValue:))
                 HStack(spacing: 4) {
                     Circle()
-                        .fill(nextPowerZone?.color ?? .gray)
+                        .fill(nextPowerZone?.color ?? .orange)
                         .frame(width: 8, height: 8)
                         .offset(x: 4)
                     Text("Next: \(state.upcomingLabel)")
@@ -168,44 +167,112 @@ struct WorkoutLiveActivity: Widget {
     private func zoneColorDot(for zone: PowerZone?) -> some View {
         Circle()
             .fill(zone?.color ?? Color.gray)
-            .frame(width: 12, height: 12)
-    }
-    
-    @ViewBuilder
-    private func zoneName(for zone: PowerZone?) -> some View {
-        if let zone = zone {
-            Text(zone.displayName)
-                .font(.caption.bold())
-        } else {
-            Text("Unknown")
-                .font(.caption.bold())
-        }
+            .frame(width: 10, height: 10)
     }
 
     @ViewBuilder
     private func timerText(state: WorkoutActivityAttributes.ContentState) -> some View {
         if let endDate = state.intervalEndDate {
-            Text(timerInterval: Date()...endDate, countsDown: true)
+            // Sneaky little trick to force the container to use only the space necessary
+            Text("88:88")
                 .monospacedDigit()
+                .hidden()
+                .overlay {
+                    Text(timerInterval: Date()...endDate, countsDown: true, showsHours: false)
+                        .monospacedDigit()
+                        .frame(alignment: .trailing)
+                }
         } else {
-            Text(state.secondsRemaining.formattedDuration) // Assuming formattedDuration is now shared via extension
+            Text(state.secondsRemaining.formattedDuration)
                 .monospacedDigit()
         }
     }
 
     @ViewBuilder
     private func minimalView(state: WorkoutActivityAttributes.ContentState) -> some View {
-        let currentPowerZone = PowerZone(rawValue: state.currentZoneRawValue ?? 1)
-        let color = currentPowerZone?.color ?? .gray
-
-        ZStack {
-            Circle()
-                .fill(color)
-            if let zoneNum = state.currentZoneRawValue {
-                Text("\(zoneNum)")
-                    .font(.caption.bold())
-                    .foregroundStyle(.white)
+        Group {
+            if let rawValue = state.currentZoneRawValue,
+               let zone = PowerZone(rawValue: rawValue) {
+                ZStack {
+                    Circle()
+                        .fill(zone.color)
+                    Text("\(rawValue)")
+                        .font(.title.bold())
+                        .foregroundStyle(.white)
+                }
+            } else {
+                ZStack {
+                    Circle()
+                        .fill(.orange.opacity(0.8))
+                    Image(systemName: "flame.fill")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.white)
+                }
             }
         }
+        .frame(width: 26, height: 26)
     }
+}
+
+// MARK: - Previews
+
+private let previewAttributes = WorkoutActivityAttributes(
+    workoutName: "Power Zone Endurance",
+    totalIntervals: 10
+)
+
+private let previewState = WorkoutActivityAttributes.ContentState(
+    currentZoneRawValue: 3,
+    currentLabel: "Zone 3",
+    currentIntervalIndex: 2,
+    nextZoneRawValue: 5,
+    upcomingLabel: "Zone 5",
+    intervalStartDate: .now,
+    intervalEndDate: .now.addingTimeInterval(180),
+    secondsRemaining: 180,
+    intervalProgress: 0.4,
+    isRunning: true,
+    isFinished: false
+)
+
+private let warmupPreviewState = WorkoutActivityAttributes.ContentState(
+    currentZoneRawValue: nil,
+    currentLabel: "Warmup",
+    currentIntervalIndex: 0,
+    nextZoneRawValue: 3,
+    upcomingLabel: "Zone 3",
+    intervalStartDate: .now,
+    intervalEndDate: .now.addingTimeInterval(300),
+    secondsRemaining: 300,
+    intervalProgress: 0.0,
+    isRunning: true,
+    isFinished: false
+)
+
+#Preview("Compact", as: .dynamicIsland(.compact), using: previewAttributes) {
+    WorkoutLiveActivity()
+} contentStates: {
+    previewState
+    warmupPreviewState
+}
+
+#Preview("Minimal", as: .dynamicIsland(.minimal), using: previewAttributes) {
+    WorkoutLiveActivity()
+} contentStates: {
+    previewState
+    warmupPreviewState
+}
+
+#Preview("Expanded", as: .dynamicIsland(.expanded), using: previewAttributes) {
+    WorkoutLiveActivity()
+} contentStates: {
+    previewState
+    warmupPreviewState
+}
+
+#Preview("Lock Screen", as: .content, using: previewAttributes) {
+    WorkoutLiveActivity()
+} contentStates: {
+    previewState
+    warmupPreviewState
 }

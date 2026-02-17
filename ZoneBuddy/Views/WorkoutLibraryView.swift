@@ -5,6 +5,7 @@ struct WorkoutLibraryView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Workout.createdAt, order: .reverse) private var workouts: [Workout]
     @State private var navigateToNewWorkout: Workout?
+    @State private var showSettings = false
 
     var body: some View {
         NavigationStack {
@@ -52,6 +53,14 @@ struct WorkoutLibraryView: View {
                 WorkoutEditorView(workout: workout, isNew: true)
             }
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showSettings = true
+                    } label: {
+                        Label("Settings", systemImage: "gearshape")
+                    }
+                }
+
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         let workout = Workout(name: "New Workout")
@@ -62,6 +71,9 @@ struct WorkoutLibraryView: View {
                         Label("New Workout", systemImage: "plus")
                     }
                 }
+            }
+            .sheet(isPresented: $showSettings) {
+                SettingsView()
             }
         }
     }
