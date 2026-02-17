@@ -12,7 +12,7 @@ final class LiveSpeechCueProvider: NSObject, SpeechCueProviding, AVSpeechSynthes
     nonisolated(unsafe) private static let shared = LiveSpeechCueProvider()
 
     // Serial queue to prevent blocking the Main Thread with audio session IPC calls
-    private let queue = DispatchQueue(label: "net.jacksonwelsh.ZoneBuddy.speech", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "dev.jacksn.ZoneBuddy.speech", qos: .userInitiated)
 
     private let synthesizer = AVSpeechSynthesizer()
     private var silentPlayer: AVAudioPlayer?

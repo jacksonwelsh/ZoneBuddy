@@ -10,6 +10,8 @@ import SwiftData
 
 @main
 struct ZoneBuddyApp: App {
+    @State private var pendingImport: WorkoutTransferData?
+
     init() {
         LiveSpeechCueProvider.warmUp()
     }
@@ -35,7 +37,11 @@ struct ZoneBuddyApp: App {
 
     var body: some Scene {
         WindowGroup {
-            WorkoutLibraryView()
+            WorkoutLibraryView(pendingImport: $pendingImport)
+                .onOpenURL { url in
+                    guard let data = try? WorkoutCoder.decode(url) else { return }
+                    pendingImport = data
+                }
         }
         .modelContainer(sharedModelContainer)
     }

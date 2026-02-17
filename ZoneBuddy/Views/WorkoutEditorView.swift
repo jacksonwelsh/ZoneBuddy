@@ -6,10 +6,9 @@ struct WorkoutEditorView: View {
     @State private var viewModel: WorkoutEditorViewModel
     @State private var showingAddInterval = false
     @State private var editingInterval: Interval?
-    @State private var selectedZone: PowerZone = .zone3
+    @State private var selectedZone: PowerZone? = .zone3
     @State private var durationMinutes: Int = 5
     @State private var durationSeconds: Int = 0
-    @State private var isWarmup: Bool = false
     @State private var navigateToPlayer = false
     @FocusState private var nameFieldFocused: Bool
 
@@ -47,13 +46,7 @@ struct WorkoutEditorView: View {
                         .contentShape(Rectangle())
                         .onTapGesture {
                             editingInterval = interval
-                            if interval.isWarmup {
-                                isWarmup = true
-                                selectedZone = .zone3
-                            } else {
-                                isWarmup = false
-                                selectedZone = interval.zone ?? .zone3
-                            }
+                            selectedZone = interval.zone
                             durationMinutes = interval.duration / 60
                             durationSeconds = interval.duration % 60
                         }
@@ -86,7 +79,6 @@ struct WorkoutEditorView: View {
             ToolbarItem(placement: .primaryAction) {
                 Button("Add", systemImage: "plus") {
                     editingInterval = nil
-                    isWarmup = false
                     selectedZone = .zone3
                     durationMinutes = 5
                     durationSeconds = 0
@@ -100,6 +92,9 @@ struct WorkoutEditorView: View {
                     Label("Start Ride", systemImage: "play.fill")
                 }
                 .disabled(!viewModel.isPlayable)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                ShareWorkoutButton(workout: viewModel.workout)
             }
             ToolbarItem(placement: .topBarTrailing) {
                 EditButton()
@@ -132,19 +127,23 @@ struct WorkoutEditorView: View {
         let isEditing = interval != nil
         return NavigationStack {
             Form {
-                Toggle("Warmup", isOn: $isWarmup)
+                Picker("Zone", selection: $selectedZone) {
+                    HStack {
+                        Circle()
+                            .fill(Color.gray)
+                            .frame(width: 20, height: 20)
+                        Text("Warmup")
+                    }
+                    .tag(nil as PowerZone?)
 
-                if !isWarmup {
-                    Picker("Zone", selection: $selectedZone) {
-                        ForEach(PowerZone.allCases) { zone in
-                            HStack {
-                                Circle()
-                                    .fill(zone.color)
-                                    .frame(width: 20, height: 20)
-                                Text(zone.displayName)
-                            }
-                            .tag(zone)
+                    ForEach(PowerZone.allCases) { zone in
+                        HStack {
+                            Circle()
+                                .fill(zone.color)
+                                .frame(width: 20, height: 20)
+                            Text(zone.displayName)
                         }
+                        .tag(zone as PowerZone?)
                     }
                 }
 
@@ -171,7 +170,7 @@ struct WorkoutEditorView: View {
                     Button(isEditing ? "Save" : "Add") {
                         let totalSeconds = durationMinutes * 60 + durationSeconds
                         guard totalSeconds > 0 else { return }
-                        let zone: PowerZone? = isWarmup ? nil : selectedZone
+                        let zone: PowerZone? = selectedZone
 
                         if let interval {
                             viewModel.updateInterval(interval, zone: zone, duration: totalSeconds)

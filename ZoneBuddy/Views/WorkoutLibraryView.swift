@@ -6,6 +6,7 @@ struct WorkoutLibraryView: View {
     @Query(sort: \Workout.createdAt, order: .reverse) private var workouts: [Workout]
     @State private var navigateToNewWorkout: Workout?
     @State private var showSettings = false
+    @Binding var pendingImport: WorkoutTransferData?
 
     var body: some View {
         NavigationStack {
@@ -20,13 +21,17 @@ struct WorkoutLibraryView: View {
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                             }
-                            
+
                             WorkoutProgressionBar(
                                 intervals: workout.sortedIntervals,
                                 totalDuration: workout.totalDuration
                             )
                         }
                         .padding(.vertical, 4)
+                    }
+                    .swipeActions(edge: .leading) {
+                        ShareWorkoutButton(workout: workout)
+                            .tint(.blue)
                     }
                 }
                 .onDelete { offsets in
@@ -75,12 +80,15 @@ struct WorkoutLibraryView: View {
             .sheet(isPresented: $showSettings) {
                 SettingsView()
             }
+            .sheet(item: $pendingImport) { data in
+                WorkoutImportView(workoutData: data)
+            }
         }
     }
 }
 
 #Preview("Empty Library") {
-    WorkoutLibraryView()
+    WorkoutLibraryView(pendingImport: .constant(nil))
         .modelContainer(for: [Workout.self, Interval.self], inMemory: true)
 }
 
@@ -101,6 +109,6 @@ struct WorkoutLibraryView: View {
     ])
     context.insert(w1)
     context.insert(w2)
-    return WorkoutLibraryView()
+    return WorkoutLibraryView(pendingImport: .constant(nil))
         .modelContainer(container)
 }
