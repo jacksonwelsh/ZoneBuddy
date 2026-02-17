@@ -1,11 +1,11 @@
 import ActivityKit
 import Foundation
 
-struct WorkoutActivityAttributes: ActivityAttributes {
+nonisolated struct WorkoutActivityAttributes: ActivityAttributes {
     let workoutName: String
     let totalIntervals: Int
 
-    struct ContentState: Codable, Hashable {
+    nonisolated struct ContentState: Codable, Hashable {
         let currentZoneRawValue: Int?
         let currentLabel: String
         let currentIntervalIndex: Int

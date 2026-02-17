@@ -53,15 +53,22 @@ struct WorkoutPlayerView: View {
         }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
+            viewModel.stopBackgroundKeepAlive()
         }
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {
             case .active:
                 UIApplication.shared.isIdleTimerDisabled = true
+                viewModel.stopBackgroundKeepAlive()
                 if viewModel.isRunning {
                     viewModel.recalculateOnForeground()
                 }
-            case .background, .inactive:
+            case .background:
+                UIApplication.shared.isIdleTimerDisabled = false
+                if viewModel.isRunning {
+                    viewModel.startBackgroundKeepAlive()
+                }
+            case .inactive:
                 UIApplication.shared.isIdleTimerDisabled = false
             @unknown default:
                 break

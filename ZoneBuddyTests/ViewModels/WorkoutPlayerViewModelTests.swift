@@ -272,6 +272,7 @@ struct WorkoutPlayerViewModelTests {
         await wait()
 
         vm.pause()
+        await wait()
 
         #expect(activityMgr.lastUpdateState?.intervalEndDate == nil)
         #expect(activityMgr.lastUpdateState?.isRunning == false)
@@ -366,7 +367,9 @@ struct WorkoutPlayerViewModelTests {
         await wait()
 
         vm.pause()
+        await wait()
         vm.endActivity()
+        await wait()
 
         #expect(activityMgr.endCalled == true)
         #expect(activityMgr.endDismissalBehavior == .immediate)

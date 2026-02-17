@@ -198,6 +198,14 @@ final class WorkoutPlayerViewModel {
         speechCueProvider.stop()
     }
 
+    func startBackgroundKeepAlive() {
+        speechCueProvider.startBackgroundKeepAlive()
+    }
+
+    func stopBackgroundKeepAlive() {
+        speechCueProvider.stopBackgroundKeepAlive()
+    }
+
     func recalculateOnForeground() {
         guard isRunning, let startDate = workoutStartDate else { return }
         let segmentElapsed = dateProvider().timeIntervalSince(startDate)
@@ -240,21 +248,21 @@ final class WorkoutPlayerViewModel {
 
     private func recalculateIntervalState(totalElapsed: TimeInterval) {
         var timeMarker: TimeInterval = 0
-        
+
         for (index, interval) in intervals.enumerated() {
             let intervalDuration = TimeInterval(interval.duration)
             let intervalEnd = timeMarker + intervalDuration
-            
+
             if totalElapsed < intervalEnd {
                 currentIntervalIndex = index
                 secondsRemaining = Int(ceil(intervalEnd - totalElapsed))
-                
+
                 showTransitionBanner = (secondsRemaining <= transitionWarningDuration && index < intervals.count - 1)
                 return
             }
             timeMarker = intervalEnd
         }
-        
+
         isFinished = true
         isRunning = false
         secondsRemaining = 0

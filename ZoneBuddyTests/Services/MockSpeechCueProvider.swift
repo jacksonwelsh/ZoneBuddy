@@ -7,4 +7,6 @@ final class MockSpeechCueProvider: SpeechCueProviding {
 
     func speak(_ text: String) { spokenTexts.append(text) }
     func stop() { stopCalled = true }
+    func startBackgroundKeepAlive() {}
+    func stopBackgroundKeepAlive() {}
 }
