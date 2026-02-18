@@ -74,6 +74,7 @@ final class WorkoutPlayerViewModel {
     private let speechCueProvider: SpeechCueProviding
     private let workoutName: String
     private let transitionWarningDuration: Int
+    private let spokenDurationSecondsThreshold: Int = 90
     private let dateProvider: @Sendable () -> Date
 
     private var timerTask: Task<Void, Never>?
@@ -243,7 +244,27 @@ final class WorkoutPlayerViewModel {
         guard audioCuesEnabled else { return }
         let label = currentLabel
         guard !label.isEmpty else { return }
-        speechCueProvider.speak(label)
+
+        if let interval = currentInterval {
+            let durationText = spokenDuration(seconds: interval.duration)
+            speechCueProvider.speak("\(label) for \(durationText)")
+        } else {
+            speechCueProvider.speak(label)
+        }
+    }
+
+    private func spokenDuration(seconds: Int) -> String {
+        if seconds <= spokenDurationSecondsThreshold {
+            return seconds == 1 ? "1 second" : "\(seconds) seconds"
+        }
+        let minutes = seconds / 60
+        let remainderSeconds = seconds % 60
+        let minutePart = minutes == 1 ? "1 minute" : "\(minutes) minutes"
+        if remainderSeconds == 0 {
+            return minutePart
+        }
+        let secondPart = remainderSeconds == 1 ? "1 second" : "\(remainderSeconds) seconds"
+        return "\(minutePart) \(secondPart)"
     }
 
     private func recalculateIntervalState(totalElapsed: TimeInterval) {

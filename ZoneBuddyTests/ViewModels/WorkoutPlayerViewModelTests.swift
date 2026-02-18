@@ -407,7 +407,7 @@ struct WorkoutPlayerViewModelTests {
         vm.start()
         await wait()
 
-        #expect(speech.spokenTexts == ["Zone 2"])
+        #expect(speech.spokenTexts == ["Zone 2 for 5 seconds"])
     }
 
     @Test
@@ -429,7 +429,7 @@ struct WorkoutPlayerViewModelTests {
         timer.fire(at: currentTime)
         await wait()
 
-        #expect(speech.spokenTexts == ["Zone 2", "Zone 4"])
+        #expect(speech.spokenTexts == ["Zone 2 for 5 seconds", "Zone 4 for 10 seconds"])
     }
 
     @Test
