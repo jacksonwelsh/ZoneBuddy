@@ -1,15 +1,18 @@
 import SwiftUI
 import SwiftData
 
+private enum PlayerDestination: Hashable { case player }
+
 struct WorkoutLibraryView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Workout.sortOrder) private var workouts: [Workout]
     @State private var navigateToNewWorkout: Workout?
     @State private var showSettings = false
+    @State private var navigationPath = NavigationPath()
     @Binding var pendingImport: WorkoutTransferData?
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             List {
                 ForEach(workouts) { workout in
                     NavigationLink(value: workout) {
@@ -83,14 +86,45 @@ struct WorkoutLibraryView: View {
                     }
                 }
             }
+            .navigationDestination(for: PlayerDestination.self) { _ in
+                playerDestination()
+            }
             .sheet(isPresented: $showSettings) {
                 SettingsView()
             }
             .sheet(item: $pendingImport) { data in
                 WorkoutImportView(workoutData: data)
             }
+            .onAppear {
+                // Handle cold-launch: intent may fire before onChange attaches
+                if NavigationManager.shared.shouldStartWorkout,
+                   NavigationManager.shared.selectedWorkout != nil {
+                    navigationPath.append(PlayerDestination.player)
+                    NavigationManager.shared.shouldStartWorkout = false
+                }
+            }
+            .onChange(of: NavigationManager.shared.shouldStartWorkout) { _, shouldStart in
+                if shouldStart, NavigationManager.shared.selectedWorkout != nil {
+                    navigationPath.append(PlayerDestination.player)
+                    NavigationManager.shared.shouldStartWorkout = false
+                }
+            }
         }
     }
+
+    @ViewBuilder
+    private func playerDestination() -> some View {
+        if let workout = NavigationManager.shared.selectedWorkout {
+            WorkoutPlayerView(
+                intervals: workout.sortedIntervals,
+                workoutName: workout.name,
+                transitionWarningDuration: workout.transitionWarningDuration
+            )
+        } else {
+            ContentUnavailableView("Workout Unavailable", systemImage: "exclamationmark.triangle")
+        }
+    }
+
     private func addWorkoutToTop(_ workout: Workout, navigate: Bool = false) {
         for existing in workouts {
             existing.sortOrder += 1

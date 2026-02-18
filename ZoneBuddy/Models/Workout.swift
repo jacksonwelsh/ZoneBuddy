@@ -3,6 +3,7 @@ import SwiftData
 
 @Model
 final class Workout {
+    var id: UUID = UUID()
     var name: String = ""
     var createdAt: Date = Date.now
     var sortOrder: Int = 0

@@ -16,25 +16,6 @@ struct ZoneBuddyApp: App {
         LiveSpeechCueProvider.warmUp()
     }
 
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Workout.self,
-            Interval.self,
-        ])
-        let modelConfiguration = ModelConfiguration(
-            schema: schema,
-            cloudKitDatabase: .automatic
-        )
-
-        do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
-            // Fallback to local-only if CloudKit fails
-            let fallback = ModelConfiguration(schema: schema, cloudKitDatabase: .none)
-            return try! ModelContainer(for: schema, configurations: [fallback])
-        }
-    }()
-
     var body: some Scene {
         WindowGroup {
             WorkoutLibraryView(pendingImport: $pendingImport)
@@ -43,6 +24,6 @@ struct ZoneBuddyApp: App {
                     pendingImport = data
                 }
         }
-        .modelContainer(sharedModelContainer)
+        .modelContainer(DataStore.shared.container)
     }
 }

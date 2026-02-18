@@ -100,6 +100,66 @@ struct WorkoutTests {
         #expect(workout.isCooldown(i2) == false)
     }
 
+    // MARK: - id (regression: intern added UUID field)
+
+    @Test
+    func workoutHasUniqueId() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+
+        let w1 = Workout(name: "Ride A")
+        let w2 = Workout(name: "Ride B")
+        context.insert(w1)
+        context.insert(w2)
+        try context.save()
+
+        #expect(w1.id != w2.id)
+    }
+
+    @Test
+    func workoutIdIsStableAfterPersistAndRefetch() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+
+        let workout = Workout(name: "Stable Ride")
+        context.insert(workout)
+        try context.save()
+        let originalId = workout.id
+
+        let fetched = try context.fetch(FetchDescriptor<Workout>())
+        #expect(fetched.first?.id == originalId)
+    }
+
+    // MARK: - Sort order fetch (regression: DataStore was sorting by createdAt)
+
+    @Test
+    func fetchDescriptorSortsBySortOrderAscending() throws {
+        // Regression: DataStore.fetchWorkouts() was sorting by createdAt descending,
+        // which disagrees with the user-defined order shown in the app.
+        let container = try makeContainer()
+        let context = container.mainContext
+
+        // Insert intentionally out of sortOrder sequence to prove the descriptor wins
+        let w3 = Workout(name: "Third")
+        w3.sortOrder = 2
+        let w1 = Workout(name: "First")
+        w1.sortOrder = 0
+        let w2 = Workout(name: "Second")
+        w2.sortOrder = 1
+        context.insert(w3)
+        context.insert(w1)
+        context.insert(w2)
+        try context.save()
+
+        let descriptor = FetchDescriptor<Workout>(sortBy: [SortDescriptor(\.sortOrder, order: .forward)])
+        let fetched = try context.fetch(descriptor)
+
+        #expect(fetched.count == 3)
+        #expect(fetched[0].name == "First")
+        #expect(fetched[1].name == "Second")
+        #expect(fetched[2].name == "Third")
+    }
+
     @Test
     func sortOrderDefaultsToZero() throws {
         let container = try makeContainer()

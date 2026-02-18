@@ -74,10 +74,12 @@ struct WorkoutPlayerView: View {
         .persistentSystemOverlays(.hidden)
         .onAppear {
             UIApplication.shared.isIdleTimerDisabled = true
+            WorkoutSessionManager.shared.activeViewModel = viewModel
             viewModel.start()
         }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
+            WorkoutSessionManager.shared.activeViewModel = nil
             viewModel.stopBackgroundKeepAlive()
         }
         .onChange(of: scenePhase) { _, newPhase in
