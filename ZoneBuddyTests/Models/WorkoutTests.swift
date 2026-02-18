@@ -1,4 +1,5 @@
 import Testing
+import Foundation
 import SwiftData
 @testable import ZoneBuddy
 
@@ -97,6 +98,37 @@ struct WorkoutTests {
         try context.save()
 
         #expect(workout.isCooldown(i2) == false)
+    }
+
+    @Test
+    func sortOrderDefaultsToZero() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+
+        let workout = Workout(name: "Test")
+        context.insert(workout)
+        try context.save()
+
+        #expect(workout.sortOrder == 0)
+    }
+
+    @Test
+    func sortOrderPersists() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+
+        let w1 = Workout(name: "First")
+        w1.sortOrder = 0
+        let w2 = Workout(name: "Second")
+        w2.sortOrder = 1
+        context.insert(w1)
+        context.insert(w2)
+        try context.save()
+
+        let descriptor = FetchDescriptor<Workout>(sortBy: [.init(\Workout.sortOrder)])
+        let fetched = try context.fetch(descriptor)
+        #expect(fetched[0].name == "First")
+        #expect(fetched[1].name == "Second")
     }
 
     @Test

@@ -3,7 +3,7 @@ import SwiftData
 
 struct WorkoutLibraryView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \Workout.createdAt, order: .reverse) private var workouts: [Workout]
+    @Query(sort: \Workout.sortOrder) private var workouts: [Workout]
     @State private var navigateToNewWorkout: Workout?
     @State private var showSettings = false
     @Binding var pendingImport: WorkoutTransferData?
@@ -38,6 +38,15 @@ struct WorkoutLibraryView: View {
                     for index in offsets {
                         modelContext.delete(workouts[index])
                     }
+                    reindex()
+                    try? modelContext.save()
+                }
+                .onMove { source, destination in
+                    var reordered = workouts
+                    reordered.move(fromOffsets: source, toOffset: destination)
+                    for (index, workout) in reordered.enumerated() {
+                        workout.sortOrder = index
+                    }
                     try? modelContext.save()
                 }
             }
@@ -68,10 +77,7 @@ struct WorkoutLibraryView: View {
 
                 ToolbarItem(placement: .primaryAction) {
                     Button {
-                        let workout = Workout(name: "New Workout")
-                        modelContext.insert(workout)
-                        try? modelContext.save()
-                        navigateToNewWorkout = workout
+                        addWorkoutToTop(Workout(name: "New Workout"), navigate: true)
                     } label: {
                         Label("New Workout", systemImage: "plus")
                     }
@@ -83,6 +89,23 @@ struct WorkoutLibraryView: View {
             .sheet(item: $pendingImport) { data in
                 WorkoutImportView(workoutData: data)
             }
+        }
+    }
+    private func addWorkoutToTop(_ workout: Workout, navigate: Bool = false) {
+        for existing in workouts {
+            existing.sortOrder += 1
+        }
+        workout.sortOrder = 0
+        modelContext.insert(workout)
+        try? modelContext.save()
+        if navigate {
+            navigateToNewWorkout = workout
+        }
+    }
+
+    private func reindex() {
+        for (index, workout) in workouts.enumerated() {
+            workout.sortOrder = index
         }
     }
 }

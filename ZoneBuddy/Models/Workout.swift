@@ -5,6 +5,7 @@ import SwiftData
 final class Workout {
     var name: String = ""
     var createdAt: Date = Date.now
+    var sortOrder: Int = 0
     var transitionWarningDuration: Int = SettingsManager.shared.transitionWarningDuration
 
     @Relationship(deleteRule: .cascade, inverse: \Interval.workout)

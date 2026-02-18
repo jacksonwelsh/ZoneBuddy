@@ -4,6 +4,7 @@ import SwiftData
 struct WorkoutImportView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Query(sort: \Workout.sortOrder) private var existingWorkouts: [Workout]
     let workoutData: WorkoutTransferData
 
     private var intervals: [Interval] {
@@ -59,11 +60,15 @@ struct WorkoutImportView: View {
     }
 
     private func saveWorkout() {
+        for existing in existingWorkouts {
+            existing.sortOrder += 1
+        }
         let workout = Workout(
             name: workoutData.name,
             intervals: intervals,
             transitionWarningDuration: workoutData.transitionWarningDuration
         )
+        workout.sortOrder = 0
         modelContext.insert(workout)
         try? modelContext.save()
     }
