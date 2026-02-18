@@ -9,7 +9,7 @@ protocol SpeechCueProviding {
 
 final class LiveSpeechCueProvider: NSObject, SpeechCueProviding, AVSpeechSynthesizerDelegate {
     // Singleton to ensure consistent state and one-time initialization
-    nonisolated(unsafe) private static let shared = LiveSpeechCueProvider()
+    private static let shared = LiveSpeechCueProvider()
 
     // Serial queue to prevent blocking the Main Thread with audio session IPC calls
     private let queue = DispatchQueue(label: "dev.jacksn.ZoneBuddy.speech", qos: .userInitiated)
