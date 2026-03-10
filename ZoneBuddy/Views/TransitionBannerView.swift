@@ -3,6 +3,8 @@ import SwiftUI
 struct TransitionBannerView: View {
     let upcomingLabel: String
     let upcomingColor: Color
+    let upcomingZoneNumber: Int?
+    let upcomingForegroundColor: Color
 
     var body: some View {
         HStack(spacing: 12) {
@@ -16,9 +18,20 @@ struct TransitionBannerView: View {
                 .font(.title2)
                 .fontWeight(.bold)
 
-            Circle()
-                .fill(upcomingColor)
-                .frame(width: 24, height: 24)
+            if let number = upcomingZoneNumber {
+                ZStack {
+                    Circle()
+                        .fill(upcomingColor)
+                        .frame(width: 34, height: 34)
+                    Text("\(number)")
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .foregroundStyle(upcomingForegroundColor)
+                }
+            } else {
+                Circle()
+                    .fill(upcomingColor)
+                    .frame(width: 30, height: 30)
+            }
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 16)
@@ -32,7 +45,7 @@ struct TransitionBannerView: View {
         Color.blue.ignoresSafeArea()
         VStack {
             Spacer()
-            TransitionBannerView(upcomingLabel: "Zone 5", upcomingColor: .orange)
+            TransitionBannerView(upcomingLabel: "VO2 Max", upcomingColor: .orange, upcomingZoneNumber: 5, upcomingForegroundColor: .black)
                 .padding(.bottom, 100)
         }
     }

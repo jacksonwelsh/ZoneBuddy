@@ -23,6 +23,12 @@ struct SettingsView: View {
                         Label("Audio Cues", systemImage: "speaker.wave.2.fill")
                     }
                 }
+
+                Section("Music") {
+                    Toggle(isOn: $settings.playlistTakesOverMusic) {
+                        Label("Playlist Replaces Current Music", systemImage: "music.note.list")
+                    }
+                }
             }
             .listStyle(.insetGrouped)
             .navigationTitle("Settings")

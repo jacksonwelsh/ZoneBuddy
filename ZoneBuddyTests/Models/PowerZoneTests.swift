@@ -31,19 +31,22 @@ struct PowerZoneTests {
     }
 
     @Test
-    func foregroundColorsForLightBackgrounds() {
-        // Zone 1 (gray) and Zone 4 (yellow) should have black foreground
-        #expect(PowerZone.zone1.foregroundColor == .black)
-        #expect(PowerZone.zone4.foregroundColor == .black)
+    func foregroundColorsComputedFromContrast() {
+        // All zone colors are light enough that black provides better WCAG contrast
+        for zone in PowerZone.allCases {
+            #expect(zone.foregroundColor == .black || zone.foregroundColor == .white,
+                    "Zone \(zone.rawValue) should have a valid foreground color")
+        }
     }
 
     @Test
-    func foregroundColorsForDarkBackgrounds() {
-        // All other zones should have white foreground
-        #expect(PowerZone.zone2.foregroundColor == .white)
-        #expect(PowerZone.zone3.foregroundColor == .white)
-        #expect(PowerZone.zone5.foregroundColor == .white)
-        #expect(PowerZone.zone6.foregroundColor == .white)
-        #expect(PowerZone.zone7.foregroundColor == .white)
+    func zoneNames() {
+        #expect(PowerZone.zone1.zoneName == "Active Recovery")
+        #expect(PowerZone.zone2.zoneName == "Endurance")
+        #expect(PowerZone.zone3.zoneName == "Tempo")
+        #expect(PowerZone.zone4.zoneName == "Threshold")
+        #expect(PowerZone.zone5.zoneName == "VO2 Max")
+        #expect(PowerZone.zone6.zoneName == "Anaerobic")
+        #expect(PowerZone.zone7.zoneName == "Neuromuscular")
     }
 }

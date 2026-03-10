@@ -10,6 +10,7 @@ struct WorkoutEditorView: View {
     @State private var durationMinutes: Int = 5
     @State private var durationSeconds: Int = 0
     @State private var navigateToPlayer = false
+    @State private var showingPlaylistPicker = false
     @FocusState private var nameFieldFocused: Bool
 
     let isNew: Bool
@@ -63,6 +64,30 @@ struct WorkoutEditorView: View {
                 }
             }
 
+            Section("Music") {
+                Button {
+                    showingPlaylistPicker = true
+                } label: {
+                    HStack {
+                        Label(
+                            viewModel.playlistName ?? "Choose Music",
+                            systemImage: "music.note.list"
+                        )
+                        Spacer()
+                        if viewModel.playlistID != nil {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                        }
+                    }
+                }
+
+                if viewModel.playlistID != nil {
+                    Toggle("Shuffle", isOn: $viewModel.playlistShuffle)
+                    Toggle("Repeat", isOn: $viewModel.playlistRepeat)
+                    Toggle("Auto Mix", isOn: $viewModel.playlistAutoMix)
+                }
+            }
+
             Section("Settings") {
                 Stepper(value: $viewModel.transitionWarningDuration, in: 0...30) {
                     HStack {
@@ -104,7 +129,12 @@ struct WorkoutEditorView: View {
             WorkoutPlayerView(
                 intervals: viewModel.intervals,
                 workoutName: viewModel.workoutName,
-                transitionWarningDuration: viewModel.transitionWarningDuration
+                transitionWarningDuration: viewModel.transitionWarningDuration,
+                playlistID: viewModel.playlistID,
+                playlistKind: viewModel.playlistKind,
+                playlistShuffle: viewModel.playlistShuffle,
+                playlistRepeat: viewModel.playlistRepeat,
+                playlistAutoMix: viewModel.playlistAutoMix
             )
         }
         .sheet(isPresented: $showingAddInterval) {
@@ -112,6 +142,17 @@ struct WorkoutEditorView: View {
         }
         .sheet(item: $editingInterval) { interval in
             intervalSheet(editing: interval)
+        }
+        .sheet(isPresented: $showingPlaylistPicker) {
+            PlaylistPickerView(
+                selectedPlaylistID: viewModel.playlistID,
+                onSelect: { id, name, kind in
+                    viewModel.selectPlaylist(id: id, name: name, kind: kind)
+                },
+                onRemove: {
+                    viewModel.clearPlaylist()
+                }
+            )
         }
         .onAppear {
             if isNew {
@@ -141,7 +182,7 @@ struct WorkoutEditorView: View {
                             Circle()
                                 .fill(zone.color)
                                 .frame(width: 20, height: 20)
-                            Text(zone.displayName)
+                            Text(zone.zoneName)
                         }
                         .tag(zone as PowerZone?)
                     }

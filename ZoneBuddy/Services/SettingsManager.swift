@@ -21,10 +21,18 @@ final class SettingsManager {
             store.synchronize()
         }
     }
-    
+
+    var playlistTakesOverMusic: Bool {
+        didSet {
+            store.set(playlistTakesOverMusic, forKey: Keys.playlistTakesOverMusic)
+            store.synchronize()
+        }
+    }
+
     private enum Keys {
         static let transitionWarningDuration = "transitionWarningDuration"
         static let audioCuesEnabled = "audioCuesEnabled"
+        static let playlistTakesOverMusic = "playlistTakesOverMusic"
     }
     
     private init() {
@@ -36,6 +44,12 @@ final class SettingsManager {
             self.audioCuesEnabled = true
         } else {
             self.audioCuesEnabled = store.bool(forKey: Keys.audioCuesEnabled)
+        }
+
+        if store.object(forKey: Keys.playlistTakesOverMusic) == nil {
+            self.playlistTakesOverMusic = true
+        } else {
+            self.playlistTakesOverMusic = store.bool(forKey: Keys.playlistTakesOverMusic)
         }
         
         NotificationCenter.default.addObserver(
@@ -53,6 +67,10 @@ final class SettingsManager {
         
         if store.object(forKey: Keys.audioCuesEnabled) != nil {
             audioCuesEnabled = store.bool(forKey: Keys.audioCuesEnabled)
+        }
+
+        if store.object(forKey: Keys.playlistTakesOverMusic) != nil {
+            playlistTakesOverMusic = store.bool(forKey: Keys.playlistTakesOverMusic)
         }
     }
 }

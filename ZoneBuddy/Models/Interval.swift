@@ -24,6 +24,11 @@ final class Interval {
 
     var baseLabel: String {
         if isWarmup { return "Warmup" }
+        return zone?.zoneName ?? ""
+    }
+
+    var spokenLabel: String {
+        if isWarmup { return "Warmup" }
         return zone?.displayName ?? ""
     }
 

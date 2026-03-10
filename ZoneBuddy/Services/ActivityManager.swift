@@ -10,11 +10,14 @@ protocol ActivityManaging {
     func startActivity(attributes: WorkoutActivityAttributes, state: WorkoutActivityAttributes.ContentState)
     func updateActivity(state: WorkoutActivityAttributes.ContentState)
     func endActivity(state: WorkoutActivityAttributes.ContentState, dismissalBehavior: ActivityDismissalBehavior)
+    var pushTokenHex: String? { get }
 }
 
 final class LiveActivityManager: ActivityManaging {
     private var activity: Activity<WorkoutActivityAttributes>?
     private var pendingUpdate: Task<Void, Never>?
+    private var pushTokenTask: Task<Void, Never>?
+    private(set) var pushTokenHex: String?
 
     func startActivity(attributes: WorkoutActivityAttributes, state: WorkoutActivityAttributes.ContentState) {
         Task.detached {
@@ -22,11 +25,25 @@ final class LiveActivityManager: ActivityManaging {
             do {
                 let activity = try Activity.request(
                     attributes: attributes,
-                    content: .init(state: state, staleDate: nil)
+                    content: .init(state: state, staleDate: nil),
+                    pushType: .token
                 )
-                await MainActor.run { self.activity = activity }
+                await MainActor.run {
+                    self.activity = activity
+                    self.observePushToken(activity)
+                }
             } catch {
                 print("Failed to start Live Activity: \(error)")
+            }
+        }
+    }
+
+    private func observePushToken(_ activity: Activity<WorkoutActivityAttributes>) {
+        pushTokenTask?.cancel()
+        pushTokenTask = Task.detached {
+            for await tokenData in activity.pushTokenUpdates {
+                let hex = tokenData.map { String(format: "%02x", $0) }.joined()
+                await MainActor.run { self.pushTokenHex = hex }
             }
         }
     }
@@ -47,6 +64,9 @@ final class LiveActivityManager: ActivityManaging {
         guard let activity else { return }
         pendingUpdate?.cancel()
         pendingUpdate = nil
+        pushTokenTask?.cancel()
+        pushTokenTask = nil
+        pushTokenHex = nil
         let policy: ActivityUIDismissalPolicy
         switch dismissalBehavior {
         case .immediate:

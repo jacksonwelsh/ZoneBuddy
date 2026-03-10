@@ -26,7 +26,7 @@ struct WorkoutPlayerViewModelTests {
         #expect(vm.secondsRemaining == 5)
         #expect(vm.isRunning == false)
         #expect(vm.isFinished == false)
-        #expect(vm.currentLabel == "Zone 2")
+        #expect(vm.currentLabel == "Endurance")
         #expect(vm.currentZoneNumber == 2)
     }
 
@@ -87,7 +87,7 @@ struct WorkoutPlayerViewModelTests {
 
         #expect(vm.currentIntervalIndex == 1)
         #expect(vm.secondsRemaining == 10)
-        #expect(vm.currentLabel == "Zone 4")
+        #expect(vm.currentLabel == "Threshold")
     }
 
     @Test
@@ -119,7 +119,7 @@ struct WorkoutPlayerViewModelTests {
         timer.fire(at: currentTime)
         await wait()
         #expect(vm.showTransitionBanner == true)
-        #expect(vm.upcomingLabel == "Zone 5")
+        #expect(vm.upcomingLabel == "VO2 Max")
     }
 
     @Test
@@ -251,7 +251,7 @@ struct WorkoutPlayerViewModelTests {
         #expect(activityMgr.startCalled == true)
         #expect(activityMgr.startAttributes?.workoutName == "Test Ride")
         #expect(activityMgr.startAttributes?.totalIntervals == 3)
-        #expect(activityMgr.startState?.currentLabel == "Zone 2")
+        #expect(activityMgr.startState?.currentLabel == "Endurance")
         #expect(activityMgr.startState?.isRunning == true)
         #expect(activityMgr.startState?.intervalEndDate != nil)
     }
@@ -325,7 +325,7 @@ struct WorkoutPlayerViewModelTests {
         await wait()
 
         #expect(activityMgr.updateCallCount > updateCountBefore)
-        #expect(activityMgr.lastUpdateState?.currentLabel == "Zone 4")
+        #expect(activityMgr.lastUpdateState?.currentLabel == "Threshold")
         #expect(activityMgr.lastUpdateState?.currentIntervalIndex == 1)
     }
 
@@ -350,7 +350,7 @@ struct WorkoutPlayerViewModelTests {
 
         #expect(activityMgr.endCalled == true)
         #expect(activityMgr.endState?.isFinished == true)
-        #expect(activityMgr.endDismissalBehavior == .afterDelay(60))
+        #expect(activityMgr.endDismissalBehavior == .afterDelay(120))
     }
 
     @Test
@@ -430,6 +430,119 @@ struct WorkoutPlayerViewModelTests {
         await wait()
 
         #expect(speech.spokenTexts == ["Zone 2 for 5 seconds", "Zone 4 for 10 seconds"])
+    }
+
+    // MARK: - Music Playback Tests
+
+    @Test
+    func startBeginsPlayback() async {
+        let currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        let music = MockMusicPlaybackManager()
+        let vm = WorkoutPlayerViewModel(
+            intervals: makeIntervals(),
+            timerProvider: timer,
+            dateProvider: { currentTime },
+            musicPlaybackManager: music,
+            playlistID: "pl.abc123",
+            playlistShuffle: true,
+            playlistRepeat: false,
+            playlistAutoMix: true
+        )
+
+        vm.start()
+        await wait()
+
+        #expect(music.startCalled == true)
+        #expect(music.startPlaylistID == "pl.abc123")
+        #expect(music.startShuffle == true)
+        #expect(music.startRepeatMode == false)
+        #expect(music.startAutoMix == true)
+    }
+
+    @Test
+    func pauseStopsPlayback() async {
+        let currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        let music = MockMusicPlaybackManager()
+        let vm = WorkoutPlayerViewModel(
+            intervals: makeIntervals(),
+            timerProvider: timer,
+            dateProvider: { currentTime },
+            musicPlaybackManager: music,
+            playlistID: "pl.abc123"
+        )
+
+        vm.start()
+        await wait()
+        vm.pause()
+
+        #expect(music.pauseCalled == true)
+    }
+
+    @Test
+    func resumeResumesPlayback() async {
+        var currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        let music = MockMusicPlaybackManager()
+        let vm = WorkoutPlayerViewModel(
+            intervals: makeIntervals(),
+            timerProvider: timer,
+            dateProvider: { currentTime },
+            musicPlaybackManager: music,
+            playlistID: "pl.abc123"
+        )
+
+        vm.start()
+        await wait()
+        vm.pause()
+
+        currentTime.addTimeInterval(5)
+        vm.resume()
+        await wait()
+
+        #expect(music.resumeCalled == true)
+    }
+
+    @Test
+    func workoutFinishStopsPlayback() async {
+        var currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        let music = MockMusicPlaybackManager()
+        let vm = WorkoutPlayerViewModel(
+            intervals: makeIntervals(),
+            timerProvider: timer,
+            dateProvider: { currentTime },
+            musicPlaybackManager: music,
+            playlistID: "pl.abc123"
+        )
+
+        vm.start()
+        await wait()
+
+        currentTime.addTimeInterval(18)
+        timer.fire(at: currentTime)
+        await wait()
+
+        #expect(music.stopCalled == true)
+    }
+
+    @Test
+    func noMusicWithoutPlaylistID() async {
+        let currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        let music = MockMusicPlaybackManager()
+        let vm = WorkoutPlayerViewModel(
+            intervals: makeIntervals(),
+            timerProvider: timer,
+            dateProvider: { currentTime },
+            musicPlaybackManager: music
+        )
+
+        vm.start()
+        await wait()
+
+        #expect(music.startCalled == false)
     }
 
     @Test

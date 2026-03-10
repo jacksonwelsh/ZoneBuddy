@@ -46,6 +46,8 @@ final class LiveSpeechCueProvider: NSObject, SpeechCueProviding, AVSpeechSynthes
         queue.async { [weak self] in
             guard let self, !self.keepAliveActive else { return }
             self.keepAliveActive = true
+            let session = AVAudioSession.sharedInstance()
+            try? session.setActive(true)
             self.startSilentPlayer()
         }
     }
@@ -67,24 +69,11 @@ final class LiveSpeechCueProvider: NSObject, SpeechCueProviding, AVSpeechSynthes
         queue.async { [weak self] in
             guard let self else { return }
 
-            // Stop the silent player so we can deactivate and reactivate the session.
-            // AVSpeechSynthesizer needs a fresh activation to acquire the audio route.
-            self.stopSilentPlayer()
-
-            let session = AVAudioSession.sharedInstance()
-            do {
-                try session.setActive(false, options: .notifyOthersOnDeactivation)
-            } catch {
-                // May fail if other audio is still active — that's OK
-            }
-
-            do {
-                try session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers, .interruptSpokenAudioAndMixWithOthers])
-                try session.setActive(true)
-            } catch {
-                print("SpeechCueProvider: failed to activate for speech: \(error)")
-            }
-
+            // In iOS 16+, AVSpeechSynthesizer manages its own audio session internally.
+            // Manual setCategory/setActive calls here can conflict with the synthesizer's
+            // own session setup and silently suppress output. The silent player already
+            // holds the background audio slot; just let the synthesizer speak on top.
+            print("SpeechCueProvider: speaking '\(text)', isSpeaking=\(self.synthesizer.isSpeaking)")
             if self.synthesizer.isSpeaking {
                 self.synthesizer.stopSpeaking(at: .immediate)
             }
@@ -102,13 +91,19 @@ final class LiveSpeechCueProvider: NSObject, SpeechCueProviding, AVSpeechSynthes
 
     // MARK: - AVSpeechSynthesizerDelegate
 
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
+        print("SpeechCueProvider: utterance started")
+    }
+
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        print("SpeechCueProvider: utterance finished")
         queue.async { [weak self] in
             self?.restoreSessionAndKeepAlive()
         }
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        print("SpeechCueProvider: utterance cancelled")
         queue.async { [weak self] in
             self?.restoreSessionAndKeepAlive()
         }
@@ -119,11 +114,11 @@ final class LiveSpeechCueProvider: NSObject, SpeechCueProviding, AVSpeechSynthes
     /// Restores the non-ducking audio category and restarts the silent player if needed.
     private func restoreSessionAndKeepAlive() {
         let session = AVAudioSession.sharedInstance()
-        // Deactivate to end ducking, then reactivate with non-ducking category
-        try? session.setActive(false, options: .notifyOthersOnDeactivation)
+        // Don't deactivate — that surrenders the background audio slot.
+        // Category changes are allowed without deactivation since iOS 7.
         try? session.setCategory(.playback, mode: .spokenAudio, options: [.mixWithOthers])
-
-        if keepAliveActive {
+        // Restart the silent player only if it stopped (e.g. first call before keep-alive started).
+        if keepAliveActive && silentPlayer == nil {
             try? session.setActive(true)
             startSilentPlayer()
         }

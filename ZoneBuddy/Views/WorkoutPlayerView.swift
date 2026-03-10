@@ -8,13 +8,29 @@ struct WorkoutPlayerView: View {
 
     let workoutName: String
 
-    init(intervals: [Interval], workoutName: String, transitionWarningDuration: Int = 10) {
+    init(
+        intervals: [Interval],
+        workoutName: String,
+        transitionWarningDuration: Int = 10,
+        playlistID: String? = nil,
+        playlistKind: String? = nil,
+        playlistShuffle: Bool = false,
+        playlistRepeat: Bool = false,
+        playlistAutoMix: Bool = false
+    ) {
         self.workoutName = workoutName
+        let musicManager: MusicPlaybackManaging? = playlistID != nil ? MusicPlaybackManager() : nil
         _viewModel = State(initialValue: WorkoutPlayerViewModel(
             intervals: intervals,
             timerProvider: LiveTimerProvider(),
             workoutName: workoutName,
-            transitionWarningDuration: transitionWarningDuration
+            transitionWarningDuration: transitionWarningDuration,
+            musicPlaybackManager: musicManager,
+            playlistID: playlistID,
+            playlistKind: playlistKind,
+            playlistShuffle: playlistShuffle,
+            playlistRepeat: playlistRepeat,
+            playlistAutoMix: playlistAutoMix
         ))
     }
 
@@ -35,7 +51,9 @@ struct WorkoutPlayerView: View {
                 if viewModel.showTransitionBanner {
                     TransitionBannerView(
                         upcomingLabel: viewModel.upcomingLabel,
-                        upcomingColor: viewModel.upcomingZoneColor
+                        upcomingColor: viewModel.upcomingZoneColor,
+                        upcomingZoneNumber: viewModel.upcomingZoneNumber,
+                        upcomingForegroundColor: viewModel.upcomingForegroundColor
                     )
                     .transition(.opacity)
                     .padding(.bottom, 100)
@@ -86,15 +104,11 @@ struct WorkoutPlayerView: View {
             switch newPhase {
             case .active:
                 UIApplication.shared.isIdleTimerDisabled = true
-                viewModel.stopBackgroundKeepAlive()
                 if viewModel.isRunning {
                     viewModel.recalculateOnForeground()
                 }
             case .background:
                 UIApplication.shared.isIdleTimerDisabled = false
-                if viewModel.isRunning {
-                    viewModel.startBackgroundKeepAlive()
-                }
             case .inactive:
                 UIApplication.shared.isIdleTimerDisabled = false
             @unknown default:
@@ -132,7 +146,7 @@ struct WorkoutPlayerView: View {
 
             if viewModel.showTimer {
                 Text(viewModel.secondsRemaining.formattedDuration)
-                    .font(.system(size: 60, weight: .light, design: .monospaced))
+                    .font(.system(size: 60, weight: .light, design: .rounded).monospacedDigit())
                     .foregroundStyle(viewModel.currentForegroundColor)
                     .contentTransition(.numericText())
             }
@@ -145,9 +159,9 @@ struct WorkoutPlayerView: View {
                 } label: {
                     Image(systemName: viewModel.isRunning ? "pause.fill" : "play.fill")
                         .font(.system(size: 24, weight: .semibold))
-                        .foregroundStyle(.black)
+                        .foregroundStyle(viewModel.currentForegroundColor)
                         .frame(width: 56, height: 56)
-                        .background(.white.opacity(0.8), in: .circle)
+                        .background(viewModel.currentZoneColor.opacity(0.6), in: .circle)
                 }
                 .buttonStyle(.plain)
                 .glassEffect(.regular.interactive(), in: .circle)
@@ -157,9 +171,9 @@ struct WorkoutPlayerView: View {
                 } label: {
                     Image(systemName: viewModel.audioCuesEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill")
                         .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(.black)
+                        .foregroundStyle(viewModel.currentForegroundColor)
                         .frame(width: 56, height: 56)
-                        .background(.white.opacity(0.8), in: .circle)
+                        .background(viewModel.currentZoneColor.opacity(0.6), in: .circle)
                 }
                 .buttonStyle(.plain)
                 .glassEffect(.regular.interactive(), in: .circle)
@@ -175,9 +189,9 @@ struct WorkoutPlayerView: View {
         } label: {
             Image(systemName: "xmark")
                 .font(.system(size: 16, weight: .bold))
-                .foregroundStyle(.black)
+                .foregroundStyle(viewModel.currentForegroundColor)
                 .frame(width: 44, height: 44)
-                .background(.white.opacity(0.8), in: .circle)
+                .background(viewModel.currentZoneColor.opacity(0.6), in: .circle)
         }
         .buttonStyle(.plain)
         .glassEffect(.regular.interactive(), in: .circle)
@@ -187,16 +201,16 @@ struct WorkoutPlayerView: View {
         VStack(spacing: 30) {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 80))
-                .foregroundStyle(.white)
+                .foregroundStyle(viewModel.currentForegroundColor)
 
             Text("Workout Complete!")
                 .font(.largeTitle)
                 .fontWeight(.bold)
-                .foregroundStyle(.white)
+                .foregroundStyle(viewModel.currentForegroundColor)
 
             Text("Total time: \(viewModel.totalElapsedSeconds.formattedDuration)")
                 .font(.title2)
-                .foregroundStyle(.white.opacity(0.8))
+                .foregroundStyle(viewModel.currentForegroundColor.opacity(0.7))
 
             Button("Done") {
                 viewModel.endActivity()
@@ -204,8 +218,8 @@ struct WorkoutPlayerView: View {
             }
             .font(.title3)
             .buttonStyle(.borderedProminent)
-            .tint(.white)
-            .foregroundStyle(.black)
+            .tint(viewModel.currentForegroundColor)
+            .foregroundStyle(viewModel.currentZoneColor)
             .padding(.top, 20)
         }
     }

@@ -2,6 +2,8 @@ import Foundation
 @testable import ZoneBuddy
 
 final class MockActivityManager: ActivityManaging {
+    var pushTokenHex: String? = nil
+
     private(set) var startCalled = false
     private(set) var startAttributes: WorkoutActivityAttributes?
     private(set) var startState: WorkoutActivityAttributes.ContentState?

@@ -7,6 +7,12 @@ final class WorkoutEditorViewModel {
     var workoutName: String
     var transitionWarningDuration: Int
     var intervals: [Interval]
+    var playlistID: String?
+    var playlistName: String?
+    var playlistKind: String?
+    var playlistShuffle: Bool
+    var playlistRepeat: Bool
+    var playlistAutoMix: Bool
 
     private let modelContext: ModelContext
 
@@ -15,6 +21,12 @@ final class WorkoutEditorViewModel {
         self.workoutName = workout.name
         self.transitionWarningDuration = workout.transitionWarningDuration
         self.intervals = workout.sortedIntervals
+        self.playlistID = workout.playlistID
+        self.playlistName = workout.playlistName
+        self.playlistKind = workout.playlistKind
+        self.playlistShuffle = workout.playlistShuffle
+        self.playlistRepeat = workout.playlistRepeat
+        self.playlistAutoMix = workout.playlistAutoMix
         self.modelContext = modelContext
     }
 
@@ -50,9 +62,32 @@ final class WorkoutEditorViewModel {
         saveChanges()
     }
 
+    func selectPlaylist(id: String, name: String, kind: MusicPickerKind) {
+        playlistID = id
+        playlistName = name
+        playlistKind = kind.rawValue
+        updateWorkoutSettings()
+    }
+
+    func clearPlaylist() {
+        playlistID = nil
+        playlistName = nil
+        playlistKind = nil
+        playlistShuffle = false
+        playlistRepeat = false
+        playlistAutoMix = false
+        updateWorkoutSettings()
+    }
+
     func updateWorkoutSettings() {
         workout.name = workoutName
         workout.transitionWarningDuration = transitionWarningDuration
+        workout.playlistID = playlistID
+        workout.playlistName = playlistName
+        workout.playlistKind = playlistKind
+        workout.playlistShuffle = playlistShuffle
+        workout.playlistRepeat = playlistRepeat
+        workout.playlistAutoMix = playlistAutoMix
         saveChanges()
     }
 

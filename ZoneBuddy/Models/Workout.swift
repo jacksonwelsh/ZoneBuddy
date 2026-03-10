@@ -8,6 +8,12 @@ final class Workout {
     var createdAt: Date = Date.now
     var sortOrder: Int = 0
     var transitionWarningDuration: Int = SettingsManager.shared.transitionWarningDuration
+    var playlistID: String?
+    var playlistName: String?
+    var playlistKind: String?
+    var playlistShuffle: Bool = false
+    var playlistRepeat: Bool = false
+    var playlistAutoMix: Bool = false
 
     @Relationship(deleteRule: .cascade, inverse: \Interval.workout)
     var intervals: [Interval]?

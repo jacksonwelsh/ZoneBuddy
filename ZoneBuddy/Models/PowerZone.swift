@@ -18,11 +18,32 @@ enum PowerZone: Int, Codable, CaseIterable, Identifiable, Sendable {
     var displayName: String {
         "Zone \(rawValue)"
     }
-    
-    var foregroundColor: Color {
+
+    var zoneName: String {
         switch self {
-        case .zone1, .zone4: .black
-        default: .white
+        case .zone1: "Active Recovery"
+        case .zone2: "Endurance"
+        case .zone3: "Tempo"
+        case .zone4: "Threshold"
+        case .zone5: "VO2 Max"
+        case .zone6: "Anaerobic"
+        case .zone7: "Neuromuscular"
         }
+    }
+
+    var foregroundColor: Color {
+        let resolved = color.resolve(in: EnvironmentValues())
+        let r = Double(resolved.red)
+        let g = Double(resolved.green)
+        let b = Double(resolved.blue)
+
+        func linearize(_ c: Double) -> Double {
+            c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+        }
+        let luminance = 0.2126 * linearize(r) + 0.7152 * linearize(g) + 0.0722 * linearize(b)
+
+        let contrastWithWhite = 1.05 / (luminance + 0.05)
+        let contrastWithBlack = (luminance + 0.05) / 0.05
+        return contrastWithBlack > contrastWithWhite ? .black : .white
     }
 }

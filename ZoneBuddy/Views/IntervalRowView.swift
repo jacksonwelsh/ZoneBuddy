@@ -28,7 +28,7 @@ struct IntervalRowView: View {
     private var label: String {
         if interval.isWarmup { return "Warmup" }
         if isCooldown { return "Cooldown" }
-        return interval.zone?.displayName ?? "Unknown"
+        return interval.zone?.zoneName ?? "Unknown"
     }
 }
 
