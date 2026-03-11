@@ -5,6 +5,7 @@ struct WorkoutPlayerView: View {
     @State private var showExitConfirmation = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     let workoutName: String
 
@@ -16,10 +17,13 @@ struct WorkoutPlayerView: View {
         playlistKind: String? = nil,
         playlistShuffle: Bool = false,
         playlistRepeat: Bool = false,
-        playlistAutoMix: Bool = false
+        playlistAutoMix: Bool = false,
+        bikeManager: BikeConnecting? = LiveBikeConnectionManager.shared
     ) {
         self.workoutName = workoutName
         let musicManager: MusicPlaybackManaging? = playlistID != nil ? MusicPlaybackManager() : nil
+        let healthKit: HealthKitWorkoutRecording? = bikeManager?.isConnected == true ? LiveHealthKitWorkoutManager() : nil
+        let hrStreamer: HeartRateStreaming? = LiveHeartRateStreamer()
         _viewModel = State(initialValue: WorkoutPlayerViewModel(
             intervals: intervals,
             timerProvider: LiveTimerProvider(),
@@ -30,53 +34,29 @@ struct WorkoutPlayerView: View {
             playlistKind: playlistKind,
             playlistShuffle: playlistShuffle,
             playlistRepeat: playlistRepeat,
-            playlistAutoMix: playlistAutoMix
+            playlistAutoMix: playlistAutoMix,
+            bikeManager: bikeManager,
+            healthKitManager: healthKit,
+            heartRateStreamer: hrStreamer
         ))
     }
 
     var body: some View {
-        ZStack {
-            viewModel.currentZoneColor
-                .ignoresSafeArea()
-                .animation(.easeInOut(duration: 0.5), value: viewModel.currentIntervalIndex)
-
-            if viewModel.isFinished {
-                finishedOverlay
+        Group {
+            if horizontalSizeClass == .regular {
+                WorkoutPlayerView_iPad(
+                    viewModel: viewModel,
+                    workoutName: workoutName,
+                    showExitConfirmation: $showExitConfirmation,
+                    dismiss: dismiss
+                )
             } else {
-                activeWorkoutOverlay
-            }
-
-            VStack {
-                Spacer()
-                if viewModel.showTransitionBanner {
-                    TransitionBannerView(
-                        upcomingLabel: viewModel.upcomingLabel,
-                        upcomingColor: viewModel.upcomingZoneColor,
-                        upcomingZoneNumber: viewModel.upcomingZoneNumber,
-                        upcomingForegroundColor: viewModel.upcomingForegroundColor
-                    )
-                    .transition(.opacity)
-                    .padding(.bottom, 100)
-                }
-            }
-            .animation(.easeInOut(duration: 0.4), value: viewModel.showTransitionBanner)
-            .allowsHitTesting(false)
-
-            if !viewModel.isFinished {
-                VStack {
-                    HStack {
-                        exitButton
-                        Spacer()
-                    }
-                    .overlay {
-                        Text(workoutName)
-                            .font(.title3)
-                            .foregroundStyle(viewModel.currentForegroundColor.opacity(0.7))
-                    }
-                    Spacer()
-                }
-                .padding(.top, 12)
-                .padding(.horizontal, 16)
+                WorkoutPlayerView_iPhone(
+                    viewModel: viewModel,
+                    workoutName: workoutName,
+                    showExitConfirmation: $showExitConfirmation,
+                    dismiss: dismiss
+                )
             }
         }
         .confirmationDialog("End Workout?", isPresented: $showExitConfirmation, titleVisibility: .visible) {
@@ -114,113 +94,6 @@ struct WorkoutPlayerView: View {
             @unknown default:
                 break
             }
-        }
-        .onTapGesture {
-            viewModel.showTimer.toggle()
-        }
-    }
-
-    private var activeWorkoutOverlay: some View {
-        VStack(spacing: 20) {
-            // Reserve space matching the exit button row so content stays centered
-            Color.clear
-                .frame(height: 44)
-
-            Spacer()
-
-            Text(viewModel.currentLabel)
-                .font(.title)
-                .fontWeight(.medium)
-                .foregroundStyle(viewModel.currentForegroundColor)
-
-            if let zoneNumber = viewModel.currentZoneNumber {
-                Text("\(zoneNumber)")
-                    .font(.system(size: 200, weight: .bold, design: .rounded))
-                    .foregroundStyle(viewModel.currentForegroundColor)
-                    .contentTransition(.numericText())
-            } else {
-                Image(systemName: "flame.fill")
-                    .font(.system(size: 120))
-                    .foregroundStyle(viewModel.currentForegroundColor)
-            }
-
-            if viewModel.showTimer {
-                Text(viewModel.secondsRemaining.formattedDuration)
-                    .font(.system(size: 60, weight: .light, design: .rounded).monospacedDigit())
-                    .foregroundStyle(viewModel.currentForegroundColor)
-                    .contentTransition(.numericText())
-            }
-
-            Spacer()
-
-            HStack(spacing: 24) {
-                Button {
-                    viewModel.togglePlayPause()
-                } label: {
-                    Image(systemName: viewModel.isRunning ? "pause.fill" : "play.fill")
-                        .font(.system(size: 24, weight: .semibold))
-                        .foregroundStyle(viewModel.currentForegroundColor)
-                        .frame(width: 56, height: 56)
-                        .background(viewModel.currentZoneColor.opacity(0.6), in: .circle)
-                }
-                .buttonStyle(.plain)
-                .glassEffect(.regular.interactive(), in: .circle)
-
-                Button {
-                    viewModel.audioCuesEnabled.toggle()
-                } label: {
-                    Image(systemName: viewModel.audioCuesEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(viewModel.currentForegroundColor)
-                        .frame(width: 56, height: 56)
-                        .background(viewModel.currentZoneColor.opacity(0.6), in: .circle)
-                }
-                .buttonStyle(.plain)
-                .glassEffect(.regular.interactive(), in: .circle)
-            }
-            .padding(.bottom, 20)
-        }
-        .padding()
-    }
-
-    private var exitButton: some View {
-        Button {
-            showExitConfirmation = true
-        } label: {
-            Image(systemName: "xmark")
-                .font(.system(size: 16, weight: .bold))
-                .foregroundStyle(viewModel.currentForegroundColor)
-                .frame(width: 44, height: 44)
-                .background(viewModel.currentZoneColor.opacity(0.6), in: .circle)
-        }
-        .buttonStyle(.plain)
-        .glassEffect(.regular.interactive(), in: .circle)
-    }
-
-    private var finishedOverlay: some View {
-        VStack(spacing: 30) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 80))
-                .foregroundStyle(viewModel.currentForegroundColor)
-
-            Text("Workout Complete!")
-                .font(.largeTitle)
-                .fontWeight(.bold)
-                .foregroundStyle(viewModel.currentForegroundColor)
-
-            Text("Total time: \(viewModel.totalElapsedSeconds.formattedDuration)")
-                .font(.title2)
-                .foregroundStyle(viewModel.currentForegroundColor.opacity(0.7))
-
-            Button("Done") {
-                viewModel.endActivity()
-                dismiss()
-            }
-            .font(.title3)
-            .buttonStyle(.borderedProminent)
-            .tint(viewModel.currentForegroundColor)
-            .foregroundStyle(viewModel.currentZoneColor)
-            .padding(.top, 20)
         }
     }
 }

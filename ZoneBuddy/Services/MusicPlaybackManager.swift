@@ -6,6 +6,8 @@ protocol MusicPlaybackManaging {
     func pausePlayback()
     func resumePlayback()
     func stopPlayback()
+    func skipToNext() async
+    func skipToPrevious() async
 }
 
 final class MusicPlaybackManager: MusicPlaybackManaging {
@@ -62,5 +64,21 @@ final class MusicPlaybackManager: MusicPlaybackManaging {
     func stopPlayback() {
         player.pause()
         player.queue = []
+    }
+
+    func skipToNext() async {
+        do {
+            try await player.skipToNextEntry()
+        } catch {
+            print("Failed to skip to next: \(error)")
+        }
+    }
+
+    func skipToPrevious() async {
+        do {
+            try await player.skipToPreviousEntry()
+        } catch {
+            print("Failed to skip to previous: \(error)")
+        }
     }
 }

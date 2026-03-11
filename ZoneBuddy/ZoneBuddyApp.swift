@@ -14,6 +14,7 @@ struct ZoneBuddyApp: App {
 
     init() {
         LiveSpeechCueProvider.warmUp()
+        LiveBikeConnectionManager.shared.autoConnect()
     }
 
     var body: some Scene {

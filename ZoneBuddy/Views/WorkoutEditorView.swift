@@ -11,6 +11,7 @@ struct WorkoutEditorView: View {
     @State private var durationSeconds: Int = 0
     @State private var navigateToPlayer = false
     @State private var showingPlaylistPicker = false
+    @State private var showingBikePrompt = false
     @FocusState private var nameFieldFocused: Bool
 
     let isNew: Bool
@@ -112,7 +113,12 @@ struct WorkoutEditorView: View {
             }
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    navigateToPlayer = true
+                    let bikeManager = LiveBikeConnectionManager.shared
+                    if SettingsManager.shared.promptForBikeBeforeWorkout && !bikeManager.isConnected {
+                        showingBikePrompt = true
+                    } else {
+                        navigateToPlayer = true
+                    }
                 } label: {
                     Label("Start Ride", systemImage: "play.fill")
                 }
@@ -153,6 +159,12 @@ struct WorkoutEditorView: View {
                     viewModel.clearPlaylist()
                 }
             )
+        }
+        .sheet(isPresented: $showingBikePrompt) {
+            BikePromptSheet(onStart: {
+                showingBikePrompt = false
+                navigateToPlayer = true
+            })
         }
         .onAppear {
             if isNew {

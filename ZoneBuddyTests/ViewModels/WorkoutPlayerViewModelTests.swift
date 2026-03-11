@@ -564,6 +564,42 @@ struct WorkoutPlayerViewModelTests {
         #expect(speech.spokenTexts.isEmpty)
     }
 
+    // MARK: - FTP Computed Property Tests
+
+    @Test
+    func currentFTPReturnsSettingsValue() {
+        let timer = MockTimerProvider()
+        let vm = WorkoutPlayerViewModel(intervals: makeIntervals(), timerProvider: timer)
+        #expect(vm.currentFTP == SettingsManager.shared.functionalThresholdPower)
+    }
+
+    @Test
+    func targetPowerRangeNilDuringWarmup() {
+        let timer = MockTimerProvider()
+        let intervals = [Interval.warmup(duration: 60, sortOrder: 0)]
+        let vm = WorkoutPlayerViewModel(intervals: intervals, timerProvider: timer)
+        #expect(vm.targetPowerRange == nil)
+        #expect(vm.targetRangeDescription == nil)
+    }
+
+    @Test
+    func targetPowerRangeValidDuringZone() {
+        let timer = MockTimerProvider()
+        let intervals = [Interval(zone: .zone4, duration: 60, sortOrder: 0)]
+        let vm = WorkoutPlayerViewModel(intervals: intervals, timerProvider: timer)
+        #expect(vm.targetPowerRange != nil)
+        #expect(vm.targetRangeDescription != nil)
+        #expect(vm.targetRangeDescription!.hasSuffix("W"))
+    }
+
+    @Test
+    func powerAsPercentOfFTPNilWithoutBike() {
+        let timer = MockTimerProvider()
+        let vm = WorkoutPlayerViewModel(intervals: makeIntervals(), timerProvider: timer)
+        #expect(vm.powerAsPercentOfFTP == nil)
+        #expect(vm.actualPowerZone == nil)
+    }
+
     @Test
     func stopClearsActiveSpeech() async {
         var currentTime = Date(timeIntervalSince1970: 1000)

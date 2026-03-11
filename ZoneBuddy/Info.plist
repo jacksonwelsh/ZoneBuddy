@@ -7,12 +7,19 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
+		<string>bluetooth-central</string>
 		<string>remote-notification</string>
 	</array>
 	<key>ZoneBuddyAPISecret</key>
 	<string>$(ZONEBUDDY_API_SECRET)</string>
 	<key>ZoneBuddyDevServerURL</key>
 	<string>$(ZONEBUDDY_DEV_SERVER_URL)</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>ZoneBuddy connects to your FTMS-compatible bike to display real-time power, cadence, and heart rate during workouts.</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>ZoneBuddy reads your health data to display workout history.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>ZoneBuddy saves your cycling workouts to the Health app when connected to a bike.</string>
 	<key>NSAppleMusicUsageDescription</key>
 	<string>ZoneBuddy needs access to your music library to play playlists during workouts.</string>
 	<key>NSLocalNetworkUsageDescription</key>

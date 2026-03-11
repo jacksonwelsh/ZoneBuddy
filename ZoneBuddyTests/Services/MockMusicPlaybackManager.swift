@@ -12,6 +12,8 @@ final class MockMusicPlaybackManager: MusicPlaybackManaging {
     private(set) var pauseCalled = false
     private(set) var resumeCalled = false
     private(set) var stopCalled = false
+    private(set) var skipToNextCalled = false
+    private(set) var skipToPreviousCalled = false
 
     func startPlayback(playlistID: String, kind: String?, shuffle: Bool, repeatMode: Bool, autoMix: Bool) async {
         startCalled = true
@@ -32,5 +34,13 @@ final class MockMusicPlaybackManager: MusicPlaybackManaging {
 
     func stopPlayback() {
         stopCalled = true
+    }
+
+    func skipToNext() async {
+        skipToNextCalled = true
+    }
+
+    func skipToPrevious() async {
+        skipToPreviousCalled = true
     }
 }
