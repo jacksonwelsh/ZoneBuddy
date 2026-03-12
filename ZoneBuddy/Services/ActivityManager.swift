@@ -1,31 +1,21 @@
 import ActivityKit
 import Foundation
 
-enum ActivityDismissalBehavior: Sendable, Equatable {
-    case immediate
-    case afterDelay(TimeInterval)
-}
-
-protocol ActivityManaging {
-    func startActivity(attributes: WorkoutActivityAttributes, state: WorkoutActivityAttributes.ContentState)
-    func updateActivity(state: WorkoutActivityAttributes.ContentState)
-    func endActivity(state: WorkoutActivityAttributes.ContentState, dismissalBehavior: ActivityDismissalBehavior)
-    var pushTokenHex: String? { get }
-}
-
 final class LiveActivityManager: ActivityManaging {
     private var activity: Activity<WorkoutActivityAttributes>?
     private var pendingUpdate: Task<Void, Never>?
     private var pushTokenTask: Task<Void, Never>?
     private(set) var pushTokenHex: String?
 
-    func startActivity(attributes: WorkoutActivityAttributes, state: WorkoutActivityAttributes.ContentState) {
+    func startActivity(workoutName: String, totalIntervals: Int, state: WorkoutActivityState) {
+        let attributes = WorkoutActivityAttributes(workoutName: workoutName, totalIntervals: totalIntervals)
+        let contentState = contentState(from: state)
         Task.detached {
             guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
             do {
                 let activity = try Activity.request(
                     attributes: attributes,
-                    content: .init(state: state, staleDate: nil),
+                    content: .init(state: contentState, staleDate: nil),
                     pushType: .token
                 )
                 await MainActor.run {
@@ -48,19 +38,19 @@ final class LiveActivityManager: ActivityManaging {
         }
     }
 
-    func updateActivity(state: WorkoutActivityAttributes.ContentState) {
+    func updateActivity(state: WorkoutActivityState) {
         guard let activity else { return }
         // Cancel any in-flight update so they don't pile up and queue behind each other.
         // This ensures we always push the latest state without blocking the caller.
         pendingUpdate?.cancel()
-        let content = ActivityContent(state: state, staleDate: nil)
+        let content = ActivityContent(state: contentState(from: state), staleDate: nil)
         pendingUpdate = Task.detached(priority: .high) {
             guard !Task.isCancelled else { return }
             await activity.update(content)
         }
     }
 
-    func endActivity(state: WorkoutActivityAttributes.ContentState, dismissalBehavior: ActivityDismissalBehavior) {
+    func endActivity(state: WorkoutActivityState, dismissalBehavior: ActivityDismissalBehavior) {
         guard let activity else { return }
         pendingUpdate?.cancel()
         pendingUpdate = nil
@@ -74,10 +64,26 @@ final class LiveActivityManager: ActivityManaging {
         case .afterDelay(let interval):
             policy = .after(Date().addingTimeInterval(interval))
         }
-        let content = ActivityContent(state: state, staleDate: nil)
+        let content = ActivityContent(state: contentState(from: state), staleDate: nil)
         self.activity = nil
         Task.detached(priority: .high) {
             await activity.end(content, dismissalPolicy: policy)
         }
+    }
+
+    private func contentState(from state: WorkoutActivityState) -> WorkoutActivityAttributes.ContentState {
+        .init(
+            currentZoneRawValue: state.currentZoneRawValue,
+            currentLabel: state.currentLabel,
+            currentIntervalIndex: state.currentIntervalIndex,
+            nextZoneRawValue: state.nextZoneRawValue,
+            upcomingLabel: state.upcomingLabel,
+            intervalStartDate: state.intervalStartDate,
+            intervalEndDate: state.intervalEndDate,
+            secondsRemaining: state.secondsRemaining,
+            intervalProgress: state.intervalProgress,
+            isRunning: state.isRunning,
+            isFinished: state.isFinished
+        )
     }
 }

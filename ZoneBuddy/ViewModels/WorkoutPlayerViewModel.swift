@@ -1,5 +1,7 @@
 import SwiftUI
+#if os(iOS)
 import FTMSKit
+#endif
 import HealthKit
 
 struct WorkoutSummary {
@@ -148,12 +150,16 @@ final class WorkoutPlayerViewModel {
         allBikeSamples.last?.calories
     }
 
-    /// Heart rate: prefer HealthKit (Apple Watch, AirPods Pro, etc.), fall back to bike HR only when HK has no data.
+    /// Heart rate: prefer Watch/HK streamer, fall back to bike HR only when streamer has no data.
+    /// Bike HR of 0 means no sensor paired — treat as nil.
     var currentHeartRate: Int? {
         if let hkHR = heartRateStreamer?.latestHeartRate {
             return hkHR
         }
-        return currentBikeData?.heartRate
+        if let bikeHR = currentBikeData?.heartRate, bikeHR > 0 {
+            return bikeHR
+        }
+        return nil
     }
 
     var currentMaxHR: Int {
@@ -169,8 +175,8 @@ final class WorkoutPlayerViewModel {
 
     let intervals: [Interval]
     private let timerProvider: TimerProviding
-    private let activityManager: ActivityManaging
-    private let speechCueProvider: SpeechCueProviding
+    private let activityManager: ActivityManaging?
+    private let speechCueProvider: SpeechCueProviding?
     let musicPlaybackManager: MusicPlaybackManaging?
     private let workoutName: String
     private let transitionWarningDuration: Int
@@ -217,8 +223,8 @@ final class WorkoutPlayerViewModel {
     init(
         intervals: [Interval],
         timerProvider: TimerProviding,
-        activityManager: ActivityManaging = LiveActivityManager(),
-        speechCueProvider: SpeechCueProviding = LiveSpeechCueProvider(),
+        activityManager: ActivityManaging? = nil,
+        speechCueProvider: SpeechCueProviding? = nil,
         workoutName: String = "",
         transitionWarningDuration: Int = 10,
         dateProvider: @escaping @Sendable () -> Date = { Date() },
@@ -257,7 +263,7 @@ final class WorkoutPlayerViewModel {
         timerTask?.cancel()
         pushTokenPollTask?.cancel()
         healthKitFlushTask?.cancel()
-        speechCueProvider.stop()
+        speechCueProvider?.stop()
         heartRateStreamer?.stopMonitoring()
     }
 
@@ -271,17 +277,17 @@ final class WorkoutPlayerViewModel {
 
         if !activityHasStarted {
             activityHasStarted = true
-            let attributes = WorkoutActivityAttributes(
+            activityManager?.startActivity(
                 workoutName: workoutName,
-                totalIntervals: intervals.count
+                totalIntervals: intervals.count,
+                state: makeActivityState()
             )
-            activityManager.startActivity(attributes: attributes, state: makeContentState())
             pollForPushTokenAndRegister()
             startMusicPlayback()
             speakCurrentLabel(delay: musicPlaybackManager != nil)
             startHealthKitAndHeartRate()
         } else {
-            activityManager.updateActivity(state: makeContentState())
+            activityManager?.updateActivity(state: makeActivityState())
             reregisterAfterPause()
             musicPlaybackManager?.resumePlayback()
         }
@@ -302,8 +308,8 @@ final class WorkoutPlayerViewModel {
                 self.recalculateIntervalState(totalElapsed: totalElapsed)
 
                 if self.isFinished {
-                    self.activityManager.endActivity(
-                        state: self.makeContentState(),
+                    self.activityManager?.endActivity(
+                        state: self.makeActivityState(),
                         dismissalBehavior: .afterDelay(120)
                     )
                     self.pushTokenPollTask?.cancel()
@@ -322,7 +328,7 @@ final class WorkoutPlayerViewModel {
 
                 if self.currentIntervalIndex != previousIndex {
                     self.speakCurrentLabel()
-                    self.activityManager.updateActivity(state: self.makeContentState())
+                    self.activityManager?.updateActivity(state: self.makeActivityState())
                 }
             }
         }
@@ -348,7 +354,7 @@ final class WorkoutPlayerViewModel {
         musicPlaybackManager?.pausePlayback()
 
         if activityHasStarted {
-            activityManager.updateActivity(state: makeContentState())
+            activityManager?.updateActivity(state: makeActivityState())
         }
     }
 
@@ -369,17 +375,17 @@ final class WorkoutPlayerViewModel {
         timerTask?.cancel()
         timerTask = nil
         workoutStartDate = nil
-        speechCueProvider.stop()
+        speechCueProvider?.stop()
         musicPlaybackManager?.stopPlayback()
         heartRateStreamer?.stopMonitoring()
     }
 
     func startBackgroundKeepAlive() {
-        speechCueProvider.startBackgroundKeepAlive()
+        speechCueProvider?.startBackgroundKeepAlive()
     }
 
     func stopBackgroundKeepAlive() {
-        speechCueProvider.stopBackgroundKeepAlive()
+        speechCueProvider?.stopBackgroundKeepAlive()
     }
 
     func recalculateOnForeground() {
@@ -388,16 +394,18 @@ final class WorkoutPlayerViewModel {
         let totalElapsed = segmentElapsed + totalSecondsAccumulatedBeforePause
         totalElapsedSeconds = Int(totalElapsed)
         recalculateIntervalState(totalElapsed: totalElapsed)
-        activityManager.updateActivity(state: makeContentState())
+        activityManager?.updateActivity(state: makeActivityState())
     }
 
     func endActivity() {
         guard activityHasStarted else { return }
-        activityManager.endActivity(state: makeContentState(), dismissalBehavior: .immediate)
+        activityManager?.endActivity(state: makeActivityState(), dismissalBehavior: .immediate)
         activityHasStarted = false
         pushTokenPollTask?.cancel()
         pushTokenPollTask = nil
         cancelServerWorkout()
+        stopWorkout()
+        finishHealthKitWorkout()
     }
 
     // MARK: - Music Playback
@@ -417,8 +425,8 @@ final class WorkoutPlayerViewModel {
 
     // MARK: - Activity State
 
-    private func makeContentState() -> WorkoutActivityAttributes.ContentState {
-        .init(
+    private func makeActivityState() -> WorkoutActivityState {
+        WorkoutActivityState(
             currentZoneRawValue: currentInterval?.zone?.rawValue,
             currentLabel: currentLabel,
             currentIntervalIndex: currentIntervalIndex,
@@ -451,10 +459,10 @@ final class WorkoutPlayerViewModel {
         if delay {
             Task {
                 try? await Task.sleep(for: .seconds(1.5))
-                speechCueProvider.speak(text)
+                speechCueProvider?.speak(text)
             }
         } else {
-            speechCueProvider.speak(text)
+            speechCueProvider?.speak(text)
         }
     }
 
@@ -508,7 +516,7 @@ final class WorkoutPlayerViewModel {
             var registeredToken: String? = nil
             for _ in 0..<10 {
                 if Task.isCancelled { return }
-                if let token = activityManager.pushTokenHex {
+                if let token = activityManager?.pushTokenHex {
                     await registerResumedWorkout(
                         pushToken: token,
                         fromIndex: fromIndex,
@@ -529,7 +537,7 @@ final class WorkoutPlayerViewModel {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(30))
                 if Task.isCancelled { return }
-                if let token = activityManager.pushTokenHex, token != registeredToken {
+                if let token = activityManager?.pushTokenHex, token != registeredToken {
                     await updateTokenWithServer(pushToken: token)
                     registeredToken = token
                 }
@@ -597,7 +605,7 @@ final class WorkoutPlayerViewModel {
             var registeredToken: String? = nil
             for _ in 0..<30 {
                 if Task.isCancelled { return }
-                if let token = activityManager.pushTokenHex {
+                if let token = activityManager?.pushTokenHex {
                     await registerWithServer(pushToken: token)
                     registeredToken = token
                     break
@@ -614,7 +622,7 @@ final class WorkoutPlayerViewModel {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(30))
                 if Task.isCancelled { return }
-                if let token = activityManager.pushTokenHex, token != registeredToken {
+                if let token = activityManager?.pushTokenHex, token != registeredToken {
                     await updateTokenWithServer(pushToken: token)
                     registeredToken = token
                 }
@@ -724,9 +732,11 @@ final class WorkoutPlayerViewModel {
         let hasBike = bikeManager?.isConnected == true
         let startDate = workoutStartDate ?? dateProvider()
 
+        #if os(iOS)
         if hasBike, let mgr = bikeManager as? LiveBikeConnectionManager {
             mgr.clearSamples()
         }
+        #endif
         if hasBike {
             allBikeSamples = []
         }

@@ -23,7 +23,11 @@
 	<key>NSAppleMusicUsageDescription</key>
 	<string>ZoneBuddy needs access to your music library to play playlists during workouts.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>ZoneBuddy connects to a local server to deliver Live Activity updates during workouts.</string>
+	<string>ZoneBuddy uses the local network to relay heart rate data between your iPhone and iPad.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_zb-hr-relay._tcp</string>
+	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

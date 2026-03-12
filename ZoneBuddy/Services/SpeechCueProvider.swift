@@ -1,12 +1,5 @@
 import AVFoundation
 
-protocol SpeechCueProviding {
-    func speak(_ text: String)
-    func stop()
-    func startBackgroundKeepAlive()
-    func stopBackgroundKeepAlive()
-}
-
 final class LiveSpeechCueProvider: NSObject, SpeechCueProviding, AVSpeechSynthesizerDelegate {
     // Singleton to ensure consistent state and one-time initialization
     private static let shared = LiveSpeechCueProvider()

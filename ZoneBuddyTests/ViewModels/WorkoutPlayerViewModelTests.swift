@@ -249,8 +249,8 @@ struct WorkoutPlayerViewModelTests {
         await wait()
 
         #expect(activityMgr.startCalled == true)
-        #expect(activityMgr.startAttributes?.workoutName == "Test Ride")
-        #expect(activityMgr.startAttributes?.totalIntervals == 3)
+        #expect(activityMgr.startWorkoutName == "Test Ride")
+        #expect(activityMgr.startTotalIntervals == 3)
         #expect(activityMgr.startState?.currentLabel == "Endurance")
         #expect(activityMgr.startState?.isRunning == true)
         #expect(activityMgr.startState?.intervalEndDate != nil)

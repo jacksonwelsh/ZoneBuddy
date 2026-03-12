@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		5A5A0000000000000000000F /* ZoneBuddyWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 5A5A00000000000000000002 /* ZoneBuddyWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		640000012F50000000000001 /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 640000002F50000000000001 /* HealthKit.framework */; settings = {ATTRIBUTES = (Weak, ); }; };
 		643634F62F60EC1E00C17361 /* FTMSKit in Frameworks */ = {isa = PBXBuildFile; productRef = 640000112F50000000000011 /* FTMSKit */; };
 		647174942F41566300CD86C8 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 647174932F41566300CD86C8 /* WidgetKit.framework */; };
@@ -15,6 +16,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		5A5A0000000000000000000C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 64D3B06B2F4039A800D06A68 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 5A5A00000000000000000001;
+			remoteInfo = ZoneBuddyWatch;
+		};
 		647174A32F41566400CD86C8 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 64D3B06B2F4039A800D06A68 /* Project object */;
@@ -39,6 +47,17 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
+		5A5A0000000000000000000E /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				5A5A0000000000000000000F /* ZoneBuddyWatch.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		647174AA2F41566400CD86C8 /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -53,6 +72,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		5A5A00000000000000000002 /* ZoneBuddyWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ZoneBuddyWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		640000002F50000000000001 /* HealthKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = HealthKit.framework; path = System/Library/Frameworks/HealthKit.framework; sourceTree = SDKROOT; };
 		647174912F41566300CD86C8 /* ZoneBuddyLiveActivityExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ZoneBuddyLiveActivityExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		647174932F41566300CD86C8 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
@@ -63,6 +83,35 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		5A5A0000000000000000000A /* Exceptions for "ZoneBuddyWatch" folder in "ZoneBuddyWatch" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 5A5A00000000000000000001 /* ZoneBuddyWatch */;
+		};
+		5A5A0000000000000000000B /* Exceptions for "ZoneBuddy" folder in "ZoneBuddyWatch" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Assets.xcassets,
+				"Extensions/Duration+Formatting.swift",
+				Models/BikeDataSample.swift,
+				Models/Interval.swift,
+				Models/PowerZone.swift,
+				Models/Workout.swift,
+				Models/WorkoutTransferData.swift,
+				Services/ActivityManaging.swift,
+				Services/ConnectivityMessages.swift,
+				Services/DataStore.swift,
+				Services/HealthKitProtocols.swift,
+				Services/SettingsManager.swift,
+				Services/SpeechCueProviding.swift,
+				Services/TimerProvider.swift,
+				ViewModels/WorkoutPlayerViewModel.swift,
+				Views/WorkoutProgressionBar.swift,
+			);
+			target = 5A5A00000000000000000001 /* ZoneBuddyWatch */;
+		};
 		647174A92F41566400CD86C8 /* Exceptions for "ZoneBuddyLiveActivity" folder in "ZoneBuddyLiveActivityExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -90,6 +139,14 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		5A5A00000000000000000009 /* ZoneBuddyWatch */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				5A5A0000000000000000000A /* Exceptions for "ZoneBuddyWatch" folder in "ZoneBuddyWatch" target */,
+			);
+			path = ZoneBuddyWatch;
+			sourceTree = "<group>";
+		};
 		647174972F41566300CD86C8 /* ZoneBuddyLiveActivity */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -103,6 +160,7 @@
 			exceptions = (
 				64D3B0962F4039AA00D06A68 /* Exceptions for "ZoneBuddy" folder in "ZoneBuddy" target */,
 				647174B02F41576100CD86C8 /* Exceptions for "ZoneBuddy" folder in "ZoneBuddyLiveActivityExtension" target */,
+				5A5A0000000000000000000B /* Exceptions for "ZoneBuddy" folder in "ZoneBuddyWatch" target */,
 			);
 			path = ZoneBuddy;
 			sourceTree = "<group>";
@@ -120,6 +178,13 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		5A5A00000000000000000006 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		6471748E2F41566300CD86C8 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -172,6 +237,7 @@
 				64D3B0872F4039AA00D06A68 /* ZoneBuddyTests */,
 				64D3B0912F4039AA00D06A68 /* ZoneBuddyUITests */,
 				647174972F41566300CD86C8 /* ZoneBuddyLiveActivity */,
+				5A5A00000000000000000009 /* ZoneBuddyWatch */,
 				647174922F41566300CD86C8 /* Frameworks */,
 				64D3B0742F4039A800D06A68 /* Products */,
 			);
@@ -184,6 +250,7 @@
 				64D3B0842F4039AA00D06A68 /* ZoneBuddyTests.xctest */,
 				64D3B08E2F4039AA00D06A68 /* ZoneBuddyUITests.xctest */,
 				647174912F41566300CD86C8 /* ZoneBuddyLiveActivityExtension.appex */,
+				5A5A00000000000000000002 /* ZoneBuddyWatch.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -191,6 +258,28 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		5A5A00000000000000000001 /* ZoneBuddyWatch */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5A5A00000000000000000003 /* Build configuration list for PBXNativeTarget "ZoneBuddyWatch" */;
+			buildPhases = (
+				5A5A00000000000000000007 /* Sources */,
+				5A5A00000000000000000006 /* Frameworks */,
+				5A5A00000000000000000008 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				5A5A00000000000000000009 /* ZoneBuddyWatch */,
+			);
+			name = ZoneBuddyWatch;
+			packageProductDependencies = (
+			);
+			productName = ZoneBuddyWatch;
+			productReference = 5A5A00000000000000000002 /* ZoneBuddyWatch.app */;
+			productType = "com.apple.product-type.application";
+		};
 		647174902F41566300CD86C8 /* ZoneBuddyLiveActivityExtension */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 647174A62F41566400CD86C8 /* Build configuration list for PBXNativeTarget "ZoneBuddyLiveActivityExtension" */;
@@ -221,11 +310,13 @@
 				64D3B0702F4039A800D06A68 /* Frameworks */,
 				64D3B0712F4039A800D06A68 /* Resources */,
 				647174AA2F41566400CD86C8 /* Embed Foundation Extensions */,
+				5A5A0000000000000000000E /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				647174A42F41566400CD86C8 /* PBXTargetDependency */,
+				5A5A0000000000000000000D /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				64D3B0752F4039A800D06A68 /* ZoneBuddy */,
@@ -294,6 +385,9 @@
 				LastSwiftUpdateCheck = 2620;
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
+					5A5A00000000000000000001 = {
+						CreatedOnToolsVersion = 26.2;
+					};
 					647174902F41566300CD86C8 = {
 						CreatedOnToolsVersion = 26.2;
 					};
@@ -331,11 +425,19 @@
 				64D3B0832F4039AA00D06A68 /* ZoneBuddyTests */,
 				64D3B08D2F4039AA00D06A68 /* ZoneBuddyUITests */,
 				647174902F41566300CD86C8 /* ZoneBuddyLiveActivityExtension */,
+				5A5A00000000000000000001 /* ZoneBuddyWatch */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		5A5A00000000000000000008 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		6471748F2F41566300CD86C8 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -367,6 +469,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		5A5A00000000000000000007 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		6471748D2F41566300CD86C8 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -398,6 +507,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		5A5A0000000000000000000D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 5A5A00000000000000000001 /* ZoneBuddyWatch */;
+			targetProxy = 5A5A0000000000000000000C /* PBXContainerItemProxy */;
+		};
 		647174A42F41566400CD86C8 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 647174902F41566300CD86C8 /* ZoneBuddyLiveActivityExtension */;
@@ -416,6 +530,74 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		5A5A00000000000000000004 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = ZoneBuddyWatch/ZoneBuddyWatch.debug.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5LQ52K2KZM;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ZoneBuddyWatch/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Zone Buddy";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "ZoneBuddy reads your heart rate during workouts to display it on screen and relay it to your iPhone.";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = dev.jacksn.ZoneBuddy;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.jacksn.ZoneBuddy.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 11.0;
+			};
+			name = Debug;
+		};
+		5A5A00000000000000000005 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = ZoneBuddyWatch/ZoneBuddyWatch.release.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5LQ52K2KZM;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ZoneBuddyWatch/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Zone Buddy";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "ZoneBuddy reads your heart rate during workouts to display it on screen and relay it to your iPhone.";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = dev.jacksn.ZoneBuddy;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.jacksn.ZoneBuddy.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 11.0;
+			};
+			name = Release;
+		};
 		647174A72F41566400CD86C8 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -766,6 +948,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		5A5A00000000000000000003 /* Build configuration list for PBXNativeTarget "ZoneBuddyWatch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5A5A00000000000000000004 /* Debug */,
+				5A5A00000000000000000005 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		647174A62F41566400CD86C8 /* Build configuration list for PBXNativeTarget "ZoneBuddyLiveActivityExtension" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

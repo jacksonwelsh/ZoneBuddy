@@ -5,28 +5,30 @@ final class MockActivityManager: ActivityManaging {
     var pushTokenHex: String? = nil
 
     private(set) var startCalled = false
-    private(set) var startAttributes: WorkoutActivityAttributes?
-    private(set) var startState: WorkoutActivityAttributes.ContentState?
+    private(set) var startWorkoutName: String?
+    private(set) var startTotalIntervals: Int?
+    private(set) var startState: WorkoutActivityState?
 
     private(set) var updateCallCount = 0
-    private(set) var lastUpdateState: WorkoutActivityAttributes.ContentState?
+    private(set) var lastUpdateState: WorkoutActivityState?
 
     private(set) var endCalled = false
-    private(set) var endState: WorkoutActivityAttributes.ContentState?
+    private(set) var endState: WorkoutActivityState?
     private(set) var endDismissalBehavior: ActivityDismissalBehavior?
 
-    func startActivity(attributes: WorkoutActivityAttributes, state: WorkoutActivityAttributes.ContentState) {
+    func startActivity(workoutName: String, totalIntervals: Int, state: WorkoutActivityState) {
         startCalled = true
-        startAttributes = attributes
+        startWorkoutName = workoutName
+        startTotalIntervals = totalIntervals
         startState = state
     }
 
-    func updateActivity(state: WorkoutActivityAttributes.ContentState) {
+    func updateActivity(state: WorkoutActivityState) {
         updateCallCount += 1
         lastUpdateState = state
     }
 
-    func endActivity(state: WorkoutActivityAttributes.ContentState, dismissalBehavior: ActivityDismissalBehavior) {
+    func endActivity(state: WorkoutActivityState, dismissalBehavior: ActivityDismissalBehavior) {
         endCalled = true
         endState = state
         endDismissalBehavior = dismissalBehavior

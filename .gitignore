@@ -1,2 +1,5 @@
 # xcconfig files contain secrets and must not be committed
 ZoneBuddy/Config/*.xcconfig
+
+# Xcode build artifacts
+build/

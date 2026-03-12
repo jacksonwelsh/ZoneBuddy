@@ -1,4 +1,5 @@
 import SwiftUI
+import WatchConnectivity
 
 struct WorkoutPlayerView: View {
     @State private var viewModel: WorkoutPlayerViewModel
@@ -8,6 +9,8 @@ struct WorkoutPlayerView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     let workoutName: String
+    private let intervals: [Interval]
+    private let transitionWarningDuration: Int
 
     init(
         intervals: [Interval],
@@ -21,9 +24,13 @@ struct WorkoutPlayerView: View {
         bikeManager: BikeConnecting? = LiveBikeConnectionManager.shared
     ) {
         self.workoutName = workoutName
+        self.intervals = intervals
+        self.transitionWarningDuration = transitionWarningDuration
         let musicManager: MusicPlaybackManaging? = playlistID != nil ? MusicPlaybackManager() : nil
         let healthKit: HealthKitWorkoutRecording? = bikeManager?.isConnected == true ? LiveHealthKitWorkoutManager() : nil
-        let hrStreamer: HeartRateStreaming? = LiveHeartRateStreamer()
+        let hrStreamer: HeartRateStreaming? = WCSession.isSupported()
+            ? WatchHeartRateRelay()
+            : PeerHeartRateRelay()
         _viewModel = State(initialValue: WorkoutPlayerViewModel(
             intervals: intervals,
             timerProvider: LiveTimerProvider(),
@@ -74,11 +81,34 @@ struct WorkoutPlayerView: View {
             UIApplication.shared.isIdleTimerDisabled = true
             WorkoutSessionManager.shared.activeViewModel = viewModel
             viewModel.start()
+            WorkoutConnectivityManager.shared.sendWorkoutStart(
+                intervals: intervals,
+                workoutName: workoutName,
+                transitionWarningDuration: transitionWarningDuration
+            )
+            if WCSession.isSupported() {
+                HRRelayService.shared.startAdvertising()
+            }
         }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
             WorkoutSessionManager.shared.activeViewModel = nil
             viewModel.stopBackgroundKeepAlive()
+            WorkoutConnectivityManager.shared.sendWorkoutEnded()
+            HRRelayService.shared.stopAdvertising()
+        }
+        .onChange(of: WorkoutConnectivityManager.shared.watchEndedWorkout) { _, ended in
+            if ended {
+                WorkoutConnectivityManager.shared.resetWatchEndedWorkout()
+                viewModel.pause()
+                viewModel.endActivity()
+                dismiss()
+            }
+        }
+        .onChange(of: WorkoutConnectivityManager.shared.latestWatchHeartRate) { _, bpm in
+            if let bpm {
+                HRRelayService.shared.sendHeartRate(bpm)
+            }
         }
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {

@@ -1,20 +1,6 @@
 import Foundation
 import HealthKit
 
-protocol HealthKitWorkoutRecording {
-    func requestAuthorization() async -> Bool
-    func startWorkout(startDate: Date) async -> Bool
-    func addSamples(_ samples: [BikeDataSample]) async
-    func endWorkout(endDate: Date) async
-}
-
-/// Protocol for streaming heart rate from HealthKit (Apple Watch, AirPods Pro, etc.)
-protocol HeartRateStreaming {
-    var latestHeartRate: Int? { get }
-    func startMonitoring(from startDate: Date)
-    func stopMonitoring()
-}
-
 final class LiveHealthKitWorkoutManager: HealthKitWorkoutRecording {
     private let healthStore = HKHealthStore()
     private var workoutBuilder: HKWorkoutBuilder?
@@ -88,7 +74,7 @@ final class LiveHealthKitWorkoutManager: HealthKitWorkoutRecording {
                 ))
             }
 
-            if let hr = sample.heartRate {
+            if let hr = sample.heartRate, hr > 0 {
                 hkSamples.append(HKQuantitySample(
                     type: HKQuantityType(.heartRate),
                     quantity: HKQuantity(unit: .count().unitDivided(by: .minute()), doubleValue: Double(hr)),
