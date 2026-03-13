@@ -280,14 +280,25 @@ struct WorkoutPlayerView_iPhone: View {
                 }
                 .fixedSize(horizontal: false, vertical: true)
 
-                if settings.layoutPreferences.showAvgPower {
-                    DataTile(isVisible: true) {
-                        AvgPowerTile(
-                            avgPower: viewModel.currentAvgPower,
-                            foregroundColor: fgColor
-                        )
+                HStack(spacing: 12) {
+                    if settings.layoutPreferences.showAvgPower {
+                        DataTile(isVisible: true) {
+                            AvgPowerTile(
+                                avgPower: viewModel.currentAvgPower,
+                                foregroundColor: fgColor
+                            )
+                        }
+                    }
+                    if settings.layoutPreferences.showOutput {
+                        DataTile(isVisible: true) {
+                            OutputTile(
+                                outputKJ: viewModel.currentTotalOutputKJ,
+                                foregroundColor: fgColor
+                            )
+                        }
                     }
                 }
+                .fixedSize(horizontal: false, vertical: true)
 
                 // Next interval preview
                 if let next = viewModel.nextInterval {
@@ -382,7 +393,11 @@ struct WorkoutPlayerView_iPhone: View {
 
             HStack(spacing: 24) {
                 summaryItem(value: "\(summary.totalCalories)", label: "Calories", unit: "kcal")
-                if let avgHR = summary.avgHeartRate {
+                summaryItem(value: String(format: "%.0f", summary.totalOutputKJ), label: "Output", unit: "kJ")
+            }
+
+            if let avgHR = summary.avgHeartRate {
+                HStack(spacing: 24) {
                     summaryItem(value: "\(avgHR)", label: "Avg HR", unit: "bpm")
                 }
             }

@@ -22,28 +22,43 @@ final class WorkoutConnectivityManager {
     }
 
     func sendWorkoutStart(intervals: [Interval], workoutName: String, transitionWarningDuration: Int) {
-        guard WCSession.default.isReachable else { return }
         let transferIntervals = intervals.map {
             IntervalTransferData(zone: $0.zoneRawValue, duration: $0.duration)
         }
         let data = WorkoutTransferData(
             name: workoutName,
             transitionWarningDuration: transitionWarningDuration,
-            intervals: transferIntervals
+            intervals: transferIntervals,
+            startedAt: Date()
         )
         guard let encoded = try? JSONEncoder().encode(data) else { return }
-        let message: [String: Any] = [
+
+        // Persist via applicationContext so the Watch gets it even if not reachable now
+        try? WCSession.default.updateApplicationContext([
             ConnectivityMessage.startWorkout: encoded
-        ]
-        WCSession.default.sendMessage(message, replyHandler: nil) { _ in }
+        ])
+
+        // Also send immediately if reachable
+        if WCSession.default.isReachable {
+            let message: [String: Any] = [
+                ConnectivityMessage.startWorkout: encoded
+            ]
+            WCSession.default.sendMessage(message, replyHandler: nil) { _ in }
+        }
     }
 
     func sendWorkoutEnded() {
-        guard WCSession.default.isReachable else { return }
-        let message: [String: Any] = [
+        // Clear applicationContext so the Watch doesn't pick up a stale workout
+        try? WCSession.default.updateApplicationContext([
             ConnectivityMessage.workoutEnded: true
-        ]
-        WCSession.default.sendMessage(message, replyHandler: nil) { _ in }
+        ])
+
+        if WCSession.default.isReachable {
+            let message: [String: Any] = [
+                ConnectivityMessage.workoutEnded: true
+            ]
+            WCSession.default.sendMessage(message, replyHandler: nil) { _ in }
+        }
     }
 
     fileprivate func handleReceivedMessage(_ message: [String: Any]) {
@@ -55,6 +70,35 @@ final class WorkoutConnectivityManager {
             Task { @MainActor in
                 self.watchEndedWorkout = true
             }
+        }
+    }
+
+    fileprivate func handleReceivedMessage(_ message: [String: Any], replyHandler: @escaping ([String: Any]) -> Void) {
+        if message[ConnectivityMessage.requestActiveWorkout] != nil {
+            Task { @MainActor in
+                guard let vm = WorkoutSessionManager.shared.activeViewModel, vm.isRunning else {
+                    replyHandler([:])
+                    return
+                }
+                // Build transfer data from the active ViewModel
+                let transferIntervals = vm.intervals.map {
+                    IntervalTransferData(zone: $0.zoneRawValue, duration: $0.duration)
+                }
+                let data = WorkoutTransferData(
+                    name: vm.workoutName,
+                    transitionWarningDuration: vm.transitionWarningDuration,
+                    intervals: transferIntervals,
+                    startedAt: Date().addingTimeInterval(TimeInterval(-vm.totalElapsedSeconds))
+                )
+                if let encoded = try? JSONEncoder().encode(data) {
+                    replyHandler([ConnectivityMessage.activeWorkoutResponse: encoded])
+                } else {
+                    replyHandler([:])
+                }
+            }
+        } else {
+            handleReceivedMessage(message)
+            replyHandler([:])
         }
     }
 
@@ -101,6 +145,12 @@ private final class SessionDelegate: NSObject, WCSessionDelegate {
     func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
         Task { @MainActor in
             self.manager?.handleReceivedMessage(message)
+        }
+    }
+
+    func session(_ session: WCSession, didReceiveMessage message: [String: Any], replyHandler: @escaping ([String: Any]) -> Void) {
+        Task { @MainActor in
+            self.manager?.handleReceivedMessage(message, replyHandler: replyHandler)
         }
     }
 }

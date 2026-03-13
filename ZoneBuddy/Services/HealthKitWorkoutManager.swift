@@ -5,6 +5,8 @@ final class LiveHealthKitWorkoutManager: HealthKitWorkoutRecording {
     private let healthStore = HKHealthStore()
     private var workoutBuilder: HKWorkoutBuilder?
 
+    var liveCalories: Double? { nil }
+
     func requestAuthorization() async -> Bool {
         guard HKHealthStore.isHealthDataAvailable() else { return false }
 
@@ -52,7 +54,11 @@ final class LiveHealthKitWorkoutManager: HealthKitWorkoutRecording {
 
         var hkSamples: [HKQuantitySample] = []
 
-        for sample in samples {
+        // Accumulators for batch-level energy and distance
+        var totalJoules: Double = 0
+        var totalDistanceMeters: Double = 0
+
+        for (index, sample) in samples.enumerated() {
             let date = sample.timestamp
 
             if let power = sample.power {
@@ -62,6 +68,14 @@ final class LiveHealthKitWorkoutManager: HealthKitWorkoutRecording {
                     start: date,
                     end: date
                 ))
+
+                // Compute energy: watts × dt → joules
+                if index > 0 {
+                    let dt = date.timeIntervalSince(samples[index - 1].timestamp)
+                    if dt > 0 && dt < 30 {
+                        totalJoules += Double(power) * dt
+                    }
+                }
             }
 
             if let cadence = sample.cadence {
@@ -82,6 +96,35 @@ final class LiveHealthKitWorkoutManager: HealthKitWorkoutRecording {
                     end: date
                 ))
             }
+
+            // Compute distance: speed (km/h) × dt → meters
+            if let speed = sample.speed, index > 0 {
+                let dt = date.timeIntervalSince(samples[index - 1].timestamp)
+                if dt > 0 && dt < 30 {
+                    totalDistanceMeters += speed * (1000.0 / 3600.0) * dt
+                }
+            }
+        }
+
+        // Add activeEnergyBurned sample for the batch (kJ ≈ kcal for cycling)
+        if totalJoules > 0 {
+            let kcal = totalJoules / 4184.0
+            hkSamples.append(HKQuantitySample(
+                type: HKQuantityType(.activeEnergyBurned),
+                quantity: HKQuantity(unit: .kilocalorie(), doubleValue: kcal),
+                start: samples.first!.timestamp,
+                end: samples.last!.timestamp
+            ))
+        }
+
+        // Add distanceCycling sample for the batch
+        if totalDistanceMeters > 0 {
+            hkSamples.append(HKQuantitySample(
+                type: HKQuantityType(.distanceCycling),
+                quantity: HKQuantity(unit: .meter(), doubleValue: totalDistanceMeters),
+                start: samples.first!.timestamp,
+                end: samples.last!.timestamp
+            ))
         }
 
         guard !hkSamples.isEmpty else { return }
@@ -93,12 +136,15 @@ final class LiveHealthKitWorkoutManager: HealthKitWorkoutRecording {
         }
     }
 
-    func endWorkout(endDate: Date) async {
+    func endWorkout(endDate: Date, metadata: [String: Any]) async {
         guard let builder = workoutBuilder else { return }
         workoutBuilder = nil
 
         do {
             try await builder.endCollection(at: endDate)
+            if !metadata.isEmpty {
+                try await builder.addMetadata(metadata)
+            }
             try await builder.finishWorkout()
         } catch {
             print("HealthKit end workout error: \(error)")

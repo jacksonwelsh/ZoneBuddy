@@ -10,6 +10,7 @@ struct WorkoutLayoutPreferences: Codable, Equatable {
     var showDistance: Bool = true
     var showCalories: Bool = true
     var showAvgPower: Bool = true
+    var showOutput: Bool = true
     var showZoneInfo: Bool = true
     var showPowerBar: Bool = true
     var showMusicControls: Bool = true

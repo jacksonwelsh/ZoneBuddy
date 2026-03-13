@@ -8,6 +8,7 @@ struct BikeMetricsView: View {
     let foregroundColor: Color
     let avgPower: Int?
     let totalCalories: Int?
+    let totalOutputKJ: Double?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -80,6 +81,12 @@ struct BikeMetricsView: View {
                     miniMetric(
                         value: "\(avg)",
                         label: "Avg Power"
+                    )
+                }
+                if let output = totalOutputKJ, output > 0 {
+                    miniMetric(
+                        value: String(format: "%.0f", output),
+                        label: "Output (kJ)"
                     )
                 }
             }

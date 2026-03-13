@@ -10,6 +10,7 @@ struct WatchWorkoutLibraryView: View {
     @Query(sort: \Workout.sortOrder) private var workouts: [Workout]
     @State private var showSettings = false
     @State private var navigationPath = NavigationPath()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
@@ -56,6 +57,26 @@ struct WatchWorkoutLibraryView: View {
             if shouldStart {
                 navigationPath.append(WatchPlayerDestination.remote)
             }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            switch phase {
+            case .active:
+                if !WatchNavigationManager.shared.shouldStartWorkout {
+                    WatchConnectivityManager.shared.startPolling()
+                }
+            case .inactive, .background:
+                WatchConnectivityManager.shared.stopPolling()
+            @unknown default:
+                break
+            }
+        }
+        .onAppear {
+            if !WatchNavigationManager.shared.shouldStartWorkout {
+                WatchConnectivityManager.shared.startPolling()
+            }
+        }
+        .onDisappear {
+            WatchConnectivityManager.shared.stopPolling()
         }
     }
 }

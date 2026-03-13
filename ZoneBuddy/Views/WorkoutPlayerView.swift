@@ -30,7 +30,7 @@ struct WorkoutPlayerView: View {
         let healthKit: HealthKitWorkoutRecording? = bikeManager?.isConnected == true ? LiveHealthKitWorkoutManager() : nil
         let hrStreamer: HeartRateStreaming? = WCSession.isSupported()
             ? WatchHeartRateRelay()
-            : PeerHeartRateRelay()
+            : BLEHeartRateScanner()
         _viewModel = State(initialValue: WorkoutPlayerViewModel(
             intervals: intervals,
             timerProvider: LiveTimerProvider(),

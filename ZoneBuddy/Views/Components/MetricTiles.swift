@@ -140,6 +140,20 @@ struct AvgPowerTile: View {
     }
 }
 
+struct OutputTile: View {
+    let outputKJ: Double?
+    let foregroundColor: Color
+
+    var body: some View {
+        MetricValueView(
+            value: outputKJ.map { String(format: "%.0f", $0) } ?? "--",
+            unit: "kJ",
+            label: "Output",
+            foregroundColor: foregroundColor
+        )
+    }
+}
+
 // MARK: - Shared metric layout
 
 private struct MetricValueView: View {

@@ -7,7 +7,9 @@ final class WatchHealthKitManager: HealthKitWorkoutRecording, HeartRateStreaming
     private var session: HKWorkoutSession?
     private var builder: HKLiveWorkoutBuilder?
     private(set) var latestHeartRate: Int?
+    private(set) var liveCalories: Double? = nil
     private var hrQuery: HKAnchoredObjectQuery?
+    private var builderDelegate: BuilderDelegate?
 
     // MARK: - HealthKitWorkoutRecording
 
@@ -45,11 +47,19 @@ final class WatchHealthKitManager: HealthKitWorkoutRecording, HeartRateStreaming
             let builder = session.associatedWorkoutBuilder()
             builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: config)
 
+            let delegate = BuilderDelegate { [weak self] calories in
+                Task { @MainActor [weak self] in
+                    self?.liveCalories = calories
+                }
+            }
+            builder.delegate = delegate
+
             session.startActivity(with: startDate)
             try await builder.beginCollection(at: startDate)
 
             self.session = session
             self.builder = builder
+            self.builderDelegate = delegate
             return true
         } catch {
             print("WatchHealthKit start workout error: \(error)")
@@ -61,14 +71,18 @@ final class WatchHealthKitManager: HealthKitWorkoutRecording, HeartRateStreaming
         // No bike data on watch — HR is collected automatically by HKLiveWorkoutBuilder
     }
 
-    func endWorkout(endDate: Date) async {
+    func endWorkout(endDate: Date, metadata: [String: Any]) async {
         guard let session, let builder else { return }
         self.session = nil
         self.builder = nil
+        self.builderDelegate = nil
 
         session.end()
         do {
             try await builder.endCollection(at: endDate)
+            if !metadata.isEmpty {
+                try await builder.addMetadata(metadata)
+            }
             try await builder.finishWorkout()
         } catch {
             print("WatchHealthKit end workout error: \(error)")
@@ -119,6 +133,28 @@ final class WatchHealthKitManager: HealthKitWorkoutRecording, HeartRateStreaming
         let bpm = Int(latest.quantity.doubleValue(for: .count().unitDivided(by: .minute())))
         Task { @MainActor in
             self.latestHeartRate = bpm
+        }
+    }
+
+    // MARK: - Builder Delegate
+
+    private class BuilderDelegate: NSObject, HKLiveWorkoutBuilderDelegate {
+        let onCaloriesUpdate: @Sendable (Double) -> Void
+
+        init(onCaloriesUpdate: @escaping @Sendable (Double) -> Void) {
+            self.onCaloriesUpdate = onCaloriesUpdate
+        }
+
+        nonisolated func workoutBuilderDidCollectEvent(_ workoutBuilder: HKLiveWorkoutBuilder) {}
+
+        nonisolated func workoutBuilder(_ workoutBuilder: HKLiveWorkoutBuilder, didCollectDataOf collectedTypes: Set<HKSampleType>) {
+            let energyType = HKQuantityType(.activeEnergyBurned)
+            guard collectedTypes.contains(energyType),
+                  let stats = workoutBuilder.statistics(for: energyType),
+                  let sum = stats.sumQuantity() else { return }
+
+            let kcal = sum.doubleValue(for: .kilocalorie())
+            onCaloriesUpdate(kcal)
         }
     }
 }

@@ -224,6 +224,15 @@ struct WorkoutPlayerView_iPad: View {
                 }
             }
 
+            if settings.layoutPreferences.showOutput {
+                DataTile(isVisible: true) {
+                    OutputTile(
+                        outputKJ: viewModel.currentTotalOutputKJ,
+                        foregroundColor: .white
+                    )
+                }
+            }
+
             if settings.layoutPreferences.showZoneInfo, let zone = viewModel.actualPowerZone {
                 DataTile(isVisible: true) {
                     ZoneInfoTile(
@@ -343,7 +352,11 @@ struct WorkoutPlayerView_iPad: View {
 
             HStack(spacing: 24) {
                 summaryItem(value: "\(summary.totalCalories)", label: "Calories", unit: "kcal")
-                if let avgHR = summary.avgHeartRate {
+                summaryItem(value: String(format: "%.0f", summary.totalOutputKJ), label: "Output", unit: "kJ")
+            }
+
+            if let avgHR = summary.avgHeartRate {
+                HStack(spacing: 24) {
                     summaryItem(value: "\(avgHR)", label: "Avg HR", unit: "bpm")
                 }
             }

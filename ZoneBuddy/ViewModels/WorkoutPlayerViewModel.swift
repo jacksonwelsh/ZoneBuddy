@@ -9,6 +9,7 @@ struct WorkoutSummary {
     let maxPower: Int
     let totalDistance: Double // in meters
     let totalCalories: Int
+    let totalOutputKJ: Double
     let avgHeartRate: Int?
     let maxHeartRate: Int?
     let duration: Int
@@ -147,7 +148,25 @@ final class WorkoutPlayerViewModel {
     }
 
     var currentTotalCalories: Int? {
-        allBikeSamples.last?.calories
+        // Prefer Watch's native calorie calculation when available
+        if let live = healthKitManager?.liveCalories {
+            return Int(live)
+        }
+        return allBikeSamples.last?.calories
+    }
+
+    var currentTotalOutputKJ: Double? {
+        guard allBikeSamples.count > 1 else { return nil }
+        var joules: Double = 0
+        for i in 1..<allBikeSamples.count {
+            if let power = allBikeSamples[i].power {
+                let dt = allBikeSamples[i].timestamp.timeIntervalSince(allBikeSamples[i - 1].timestamp)
+                if dt > 0 && dt < 30 {
+                    joules += Double(power) * dt
+                }
+            }
+        }
+        return joules / 1000.0
     }
 
     /// Heart rate: prefer Watch/HK streamer, fall back to bike HR only when streamer has no data.
@@ -178,8 +197,8 @@ final class WorkoutPlayerViewModel {
     private let activityManager: ActivityManaging?
     private let speechCueProvider: SpeechCueProviding?
     let musicPlaybackManager: MusicPlaybackManaging?
-    private let workoutName: String
-    private let transitionWarningDuration: Int
+    let workoutName: String
+    let transitionWarningDuration: Int
     private let spokenDurationSecondsThreshold: Int = 90
     private let dateProvider: @Sendable () -> Date
     private let playlistID: String?
@@ -269,8 +288,15 @@ final class WorkoutPlayerViewModel {
 
     // MARK: - Actions
 
-    func start() {
+    func start(atElapsedSeconds elapsed: Int = 0) {
         guard !isRunning && !isFinished && !intervals.isEmpty else { return }
+
+        if elapsed > 0 && !activityHasStarted {
+            totalSecondsAccumulatedBeforePause = TimeInterval(elapsed)
+            recalculateIntervalState(totalElapsed: TimeInterval(elapsed))
+            totalElapsedSeconds = elapsed
+            if isFinished { return }
+        }
 
         workoutStartDate = dateProvider()
         isRunning = true
@@ -821,13 +847,29 @@ final class WorkoutPlayerViewModel {
         // Compute summary
         let powers = allBikeSamples.compactMap(\.power)
         let heartRates = allBikeSamples.compactMap(\.heartRate)
-        let lastCalories = allBikeSamples.last?.calories
+
+        // Compute total output (kJ) from power samples: Σ(watts × dt) / 1000
+        var totalJoules: Double = 0
+        if allBikeSamples.count > 1 {
+            for i in 1..<allBikeSamples.count {
+                if let power = allBikeSamples[i].power {
+                    let dt = allBikeSamples[i].timestamp.timeIntervalSince(allBikeSamples[i - 1].timestamp)
+                    if dt > 0 && dt < 30 {
+                        totalJoules += Double(power) * dt
+                    }
+                }
+            }
+        }
+        let totalOutputKJ = totalJoules / 1000.0
+        // kJ ≈ kcal for cycling (metabolic efficiency ~25% cancels with kJ→kcal conversion)
+        let computedCalories = Int(totalJoules / 4184.0)
 
         workoutSummary = WorkoutSummary(
             avgPower: powers.isEmpty ? 0 : powers.reduce(0, +) / powers.count,
             maxPower: powers.max() ?? 0,
             totalDistance: computedDistanceMeters,
-            totalCalories: lastCalories ?? 0,
+            totalCalories: computedCalories,
+            totalOutputKJ: totalOutputKJ,
             avgHeartRate: heartRates.isEmpty ? nil : heartRates.reduce(0, +) / heartRates.count,
             maxHeartRate: heartRates.max(),
             duration: totalElapsedSeconds,
@@ -835,9 +877,12 @@ final class WorkoutPlayerViewModel {
         )
 
         let endDate = dateProvider()
+        let metadata: [String: Any] = [
+            "TotalOutputKJ": totalOutputKJ,
+        ]
         Task {
             await healthKitManager.addSamples(remaining)
-            await healthKitManager.endWorkout(endDate: endDate)
+            await healthKitManager.endWorkout(endDate: endDate, metadata: metadata)
         }
     }
 }

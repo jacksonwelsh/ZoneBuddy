@@ -14,6 +14,7 @@ struct WorkoutTransferData: Codable, Identifiable, Sendable {
     var name: String
     var transitionWarningDuration: Int
     var intervals: [IntervalTransferData]
+    var startedAt: Date?
 
     var id: String { name + intervals.map { "\($0.zone ?? -1):\($0.duration)" }.joined() }
 
@@ -21,6 +22,7 @@ struct WorkoutTransferData: Codable, Identifiable, Sendable {
         case name = "n"
         case transitionWarningDuration = "t"
         case intervals = "i"
+        case startedAt = "s"
     }
 
     init(workout: Workout) {
@@ -31,10 +33,11 @@ struct WorkoutTransferData: Codable, Identifiable, Sendable {
         }
     }
 
-    init(name: String, transitionWarningDuration: Int, intervals: [IntervalTransferData]) {
+    init(name: String, transitionWarningDuration: Int, intervals: [IntervalTransferData], startedAt: Date? = nil) {
         self.name = name
         self.transitionWarningDuration = transitionWarningDuration
         self.intervals = intervals
+        self.startedAt = startedAt
     }
 
     var totalDuration: Int {

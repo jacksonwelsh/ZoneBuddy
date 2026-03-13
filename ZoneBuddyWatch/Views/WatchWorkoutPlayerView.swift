@@ -3,12 +3,15 @@ import SwiftUI
 struct WatchWorkoutPlayerView: View {
     @State private var viewModel: WorkoutPlayerViewModel
     @State private var showExitConfirm = false
+    @State private var hrBroadcaster = WatchHRBroadcaster()
     @Environment(\.dismiss) private var dismiss
 
     private let isRemote: Bool
+    private let elapsedSecondsAtStart: Int
 
     init(workout: Workout) {
         self.isRemote = false
+        self.elapsedSecondsAtStart = 0
         let healthKitManager = WatchHealthKitManager()
         _viewModel = State(initialValue: WorkoutPlayerViewModel(
             intervals: workout.sortedIntervals,
@@ -30,6 +33,11 @@ struct WatchWorkoutPlayerView: View {
                 duration: data.duration,
                 sortOrder: index
             )
+        }
+        if let startedAt = transferData.startedAt {
+            self.elapsedSecondsAtStart = max(0, Int(Date().timeIntervalSince(startedAt)))
+        } else {
+            self.elapsedSecondsAtStart = 0
         }
         let healthKitManager = WatchHealthKitManager()
         _viewModel = State(initialValue: WorkoutPlayerViewModel(
@@ -61,12 +69,14 @@ struct WatchWorkoutPlayerView: View {
         .navigationBarBackButtonHidden(true)
         .onAppear {
             WatchWorkoutSessionManager.shared.startSession()
-            viewModel.start()
+            viewModel.start(atElapsedSeconds: elapsedSecondsAtStart)
+            hrBroadcaster.start()
         }
         .onDisappear {
             WatchWorkoutSessionManager.shared.endSession()
             viewModel.stopBackgroundKeepAlive()
             WatchConnectivityManager.shared.sendWorkoutEnded()
+            hrBroadcaster.stop()
             if isRemote {
                 WatchNavigationManager.shared.reset()
             }
@@ -74,6 +84,7 @@ struct WatchWorkoutPlayerView: View {
         .onChange(of: viewModel.currentHeartRate) { _, hr in
             if let hr {
                 WatchConnectivityManager.shared.sendHeartRate(hr)
+                hrBroadcaster.updateHeartRate(hr)
             }
         }
         .onChange(of: WatchNavigationManager.shared.shouldDismissWorkout) { _, shouldDismiss in

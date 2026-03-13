@@ -13,6 +13,7 @@ struct WorkoutLayoutEditorView: View {
                 Toggle("Distance", isOn: $settings.layoutPreferences.showDistance)
                 Toggle("Calories", isOn: $settings.layoutPreferences.showCalories)
                 Toggle("Average Power", isOn: $settings.layoutPreferences.showAvgPower)
+                Toggle("Total Output", isOn: $settings.layoutPreferences.showOutput)
             }
 
             Section("Display") {
