@@ -6,6 +6,8 @@ enum ConnectivityMessage {
     static let workoutEnded = "workoutEnded"
     static let requestActiveWorkout = "requestActiveWorkout"
     static let activeWorkoutResponse = "activeWorkoutResponse"
+    static let pauseWorkout = "pauseWorkout"
+    static let resumeWorkout = "resumeWorkout"
 
     static let payloadKey = "payload"
     static let bpmKey = "bpm"

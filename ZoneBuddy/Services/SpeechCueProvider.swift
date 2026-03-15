@@ -2,7 +2,7 @@ import AVFoundation
 
 final class LiveSpeechCueProvider: NSObject, SpeechCueProviding, AVSpeechSynthesizerDelegate {
     // Singleton to ensure consistent state and one-time initialization
-    private static let shared = LiveSpeechCueProvider()
+    static let shared = LiveSpeechCueProvider()
 
     // Serial queue to prevent blocking the Main Thread with audio session IPC calls
     private let queue = DispatchQueue(label: "dev.jacksn.ZoneBuddy.speech", qos: .userInitiated)
@@ -62,10 +62,10 @@ final class LiveSpeechCueProvider: NSObject, SpeechCueProviding, AVSpeechSynthes
         queue.async { [weak self] in
             guard let self else { return }
 
-            // In iOS 16+, AVSpeechSynthesizer manages its own audio session internally.
-            // Manual setCategory/setActive calls here can conflict with the synthesizer's
-            // own session setup and silently suppress output. The silent player already
-            // holds the background audio slot; just let the synthesizer speak on top.
+            // Duck other audio (e.g. music) while speaking, then restore in the delegate.
+            let session = AVAudioSession.sharedInstance()
+            try? session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+
             print("SpeechCueProvider: speaking '\(text)', isSpeaking=\(self.synthesizer.isSpeaking)")
             if self.synthesizer.isSpeaking {
                 self.synthesizer.stopSpeaking(at: .immediate)

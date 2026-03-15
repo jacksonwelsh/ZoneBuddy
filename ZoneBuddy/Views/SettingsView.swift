@@ -97,6 +97,7 @@ struct SettingsView: View {
                         Label("Customize Tiles", systemImage: "square.grid.2x2")
                     }
                 }
+
             }
             .listStyle(.insetGrouped)
             .navigationTitle("Settings")

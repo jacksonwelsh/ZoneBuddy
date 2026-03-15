@@ -8,7 +8,10 @@ protocol HealthKitWorkoutRecording {
     func requestAuthorization() async -> Bool
     func startWorkout(startDate: Date) async -> Bool
     func addSamples(_ samples: [BikeDataSample]) async
+    func addHeartRateSamples(_ samples: [(bpm: Int, date: Date)]) async
     func endWorkout(endDate: Date, metadata: [String: Any]) async
+    func pauseWorkout()
+    func resumeWorkout()
 }
 
 /// Protocol for streaming heart rate from HealthKit (Apple Watch, AirPods Pro, etc.)

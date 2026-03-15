@@ -9,6 +9,9 @@ struct WorkoutPlayerView_iPhone: View {
 
     @State private var selectedPage = 0
     private let settings = SettingsManager.shared
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+
+    private var isLandscape: Bool { verticalSizeClass == .compact }
 
     private var isBikeConnected: Bool {
         viewModel.isConnectedToBike
@@ -45,7 +48,7 @@ struct WorkoutPlayerView_iPhone: View {
                 finishedOverlay
             } else {
                 TabView(selection: $selectedPage) {
-                    activeWorkoutPage
+                    (isLandscape ? AnyView(landscapeActiveWorkoutPage) : AnyView(activeWorkoutPage))
                         .tag(0)
 
                     metricsPage
@@ -197,6 +200,118 @@ struct WorkoutPlayerView_iPhone: View {
             Spacer().frame(height: 8)
         }
         .padding()
+    }
+
+    // MARK: - Landscape Active Page
+
+    private var landscapeActiveWorkoutPage: some View {
+        VStack(spacing: 0) {
+            Color.clear.frame(height: 36)
+
+            // Two-column: big zone number left, zone info right
+            HStack(alignment: .center, spacing: 24) {
+                // Upper left: large zone number
+                Group {
+                    if let zoneNumber = viewModel.currentZoneNumber {
+                        Text("\(zoneNumber)")
+                            .font(.system(size: 130, weight: .bold, design: .rounded))
+                            .foregroundStyle(isBikeConnected ? accentColor : fgColor)
+                            .contentTransition(.numericText())
+                    } else {
+                        Image(systemName: "flame.fill")
+                            .font(.system(size: 80))
+                            .foregroundStyle(isBikeConnected ? .orange : fgColor)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+
+                // Upper right: zone name + target watts + time remaining
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(viewModel.currentLabel)
+                        .font(.largeTitle)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(isBikeConnected ? accentColor : fgColor)
+
+                    if let rangeDesc = viewModel.targetRangeDescription {
+                        Text(rangeDesc)
+                            .font(.title2)
+                            .fontWeight(.medium)
+                            .foregroundStyle(fgColor.opacity(0.7))
+                    }
+
+                    Text(viewModel.secondsRemaining.formattedDuration)
+                        .font(.system(size: 52, weight: .light, design: .rounded).monospacedDigit())
+                        .foregroundStyle(fgColor)
+                        .contentTransition(.numericText())
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.horizontal, 24)
+            .frame(maxHeight: .infinity)
+
+            // Bottom: power bar + controls
+            VStack(spacing: 10) {
+                if isBikeConnected, settings.layoutPreferences.showPowerBar {
+                    PowerZoneBar(
+                        ftp: viewModel.currentFTP,
+                        targetZone: viewModel.currentInterval?.zone,
+                        currentPower: viewModel.currentBikeData?.instantaneousPower,
+                        compact: true
+                    )
+                    .padding(.horizontal, 24)
+                }
+
+                HStack(spacing: 20) {
+                    Spacer()
+
+                    Button {
+                        viewModel.togglePlayPause()
+                    } label: {
+                        Image(systemName: viewModel.isRunning ? "pause.fill" : "play.fill")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(fgColor)
+                            .frame(width: 44, height: 44)
+                            .background(
+                                isBikeConnected
+                                    ? Color.white.opacity(0.1)
+                                    : viewModel.currentZoneColor.opacity(0.6),
+                                in: .circle
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .glassEffect(.regular.interactive(), in: .circle)
+
+                    Button {
+                        viewModel.audioCuesEnabled.toggle()
+                    } label: {
+                        Image(systemName: viewModel.audioCuesEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(fgColor)
+                            .frame(width: 44, height: 44)
+                            .background(
+                                isBikeConnected
+                                    ? Color.white.opacity(0.1)
+                                    : viewModel.currentZoneColor.opacity(0.6),
+                                in: .circle
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .glassEffect(.regular.interactive(), in: .circle)
+
+                    if settings.layoutPreferences.showMusicControls {
+                        MusicControlsView(
+                            musicManager: viewModel.musicPlaybackManager,
+                            foregroundColor: fgColor,
+                            zoneColor: isBikeConnected ? Color.white.opacity(0.1) : viewModel.currentZoneColor,
+                            compact: true
+                        )
+                    }
+
+                    Spacer()
+                }
+            }
+            .padding(.bottom, 8)
+        }
     }
 
     // MARK: - Page 2: Metrics

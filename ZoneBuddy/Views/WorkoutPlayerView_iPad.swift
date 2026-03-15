@@ -9,6 +9,10 @@ struct WorkoutPlayerView_iPad: View {
 
     private let settings = SettingsManager.shared
 
+    private var isBikeConnected: Bool {
+        viewModel.isConnectedToBike
+    }
+
     private let columns = [
         GridItem(.flexible(), spacing: 16),
         GridItem(.flexible(), spacing: 16),
@@ -17,17 +21,21 @@ struct WorkoutPlayerView_iPad: View {
 
     var body: some View {
         ZStack {
-            // Zone-tinted gradient background
-            LinearGradient(
-                colors: [
-                    viewModel.currentZoneColor.opacity(0.15),
-                    Color.black.opacity(0.95),
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
-            .animation(.easeInOut(duration: 0.8), value: viewModel.currentIntervalIndex)
+            // Background: solid black + edge glow (bike connected) or zone-tinted gradient (no bike)
+            if isBikeConnected {
+                Color.black.ignoresSafeArea()
+            } else {
+                LinearGradient(
+                    colors: [
+                        viewModel.currentZoneColor.opacity(0.15),
+                        Color.black.opacity(0.95),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
+                .animation(.easeInOut(duration: 0.8), value: viewModel.currentIntervalIndex)
+            }
 
             if viewModel.isFinished {
                 finishedOverlay
@@ -41,6 +49,15 @@ struct WorkoutPlayerView_iPad: View {
                     }
                     .padding(20)
                 }
+            }
+
+            // Edge glow — same as iPhone, device corner radius auto-detected
+            if isBikeConnected {
+                EdgeGlowView(
+                    actualZone: viewModel.actualPowerZone,
+                    targetZone: viewModel.currentInterval?.zone,
+                    intensity: 1.0
+                )
             }
         }
     }

@@ -8,6 +8,9 @@ final class WatchHealthKitManager: HealthKitWorkoutRecording, HeartRateStreaming
     private var builder: HKLiveWorkoutBuilder?
     private(set) var latestHeartRate: Int?
     private(set) var liveCalories: Double? = nil
+    /// When false, the workout session ends but data is not saved to HealthKit
+    /// (used when iPad is recording the primary workout).
+    var saveOnEnd: Bool = true
     private var hrQuery: HKAnchoredObjectQuery?
     private var builderDelegate: BuilderDelegate?
 
@@ -71,6 +74,10 @@ final class WatchHealthKitManager: HealthKitWorkoutRecording, HeartRateStreaming
         // No bike data on watch — HR is collected automatically by HKLiveWorkoutBuilder
     }
 
+    func addHeartRateSamples(_ samples: [(bpm: Int, date: Date)]) async {
+        // No-op: Watch collects HR natively via HKLiveWorkoutDataSource
+    }
+
     func endWorkout(endDate: Date, metadata: [String: Any]) async {
         guard let session, let builder else { return }
         self.session = nil
@@ -80,13 +87,25 @@ final class WatchHealthKitManager: HealthKitWorkoutRecording, HeartRateStreaming
         session.end()
         do {
             try await builder.endCollection(at: endDate)
-            if !metadata.isEmpty {
-                try await builder.addMetadata(metadata)
+            if saveOnEnd {
+                if !metadata.isEmpty {
+                    try await builder.addMetadata(metadata)
+                }
+                try await builder.finishWorkout()
+            } else {
+                builder.discardWorkout()
             }
-            try await builder.finishWorkout()
         } catch {
             print("WatchHealthKit end workout error: \(error)")
         }
+    }
+
+    func pauseWorkout() {
+        session?.pause()
+    }
+
+    func resumeWorkout() {
+        session?.resume()
     }
 
     // MARK: - HeartRateStreaming

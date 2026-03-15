@@ -5,6 +5,7 @@ import SwiftData
 struct ZoneBuddyWatchApp: App {
     init() {
         WatchConnectivityManager.shared.activate()
+        WatchHRBroadcaster.shared.start()
     }
 
     var body: some Scene {

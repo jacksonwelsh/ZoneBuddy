@@ -106,9 +106,12 @@ final class LiveHealthKitWorkoutManager: HealthKitWorkoutRecording {
             }
         }
 
-        // Add activeEnergyBurned sample for the batch (kJ ≈ kcal for cycling)
+        // Add activeEnergyBurned sample for the batch.
+        // Gross mechanical efficiency of cycling is ~25%, so metabolic cost = output / 0.25.
+        // This gives kcal ≈ kJ_output numerically (the well-known cyclist's approximation).
+        let cyclingEfficiency = 0.25
         if totalJoules > 0 {
-            let kcal = totalJoules / 4184.0
+            let kcal = totalJoules / (cyclingEfficiency * 4184.0)
             hkSamples.append(HKQuantitySample(
                 type: HKQuantityType(.activeEnergyBurned),
                 quantity: HKQuantity(unit: .kilocalorie(), doubleValue: kcal),
@@ -135,6 +138,28 @@ final class LiveHealthKitWorkoutManager: HealthKitWorkoutRecording {
             print("HealthKit addSamples error: \(error)")
         }
     }
+
+    func addHeartRateSamples(_ samples: [(bpm: Int, date: Date)]) async {
+        guard let builder = workoutBuilder, !samples.isEmpty else { return }
+
+        let hkSamples = samples.map { sample in
+            HKQuantitySample(
+                type: HKQuantityType(.heartRate),
+                quantity: HKQuantity(unit: .count().unitDivided(by: .minute()), doubleValue: Double(sample.bpm)),
+                start: sample.date,
+                end: sample.date
+            )
+        }
+
+        do {
+            try await builder.addSamples(hkSamples)
+        } catch {
+            print("HealthKit addHeartRateSamples error: \(error)")
+        }
+    }
+
+    func pauseWorkout() {}
+    func resumeWorkout() {}
 
     func endWorkout(endDate: Date, metadata: [String: Any]) async {
         guard let builder = workoutBuilder else { return }

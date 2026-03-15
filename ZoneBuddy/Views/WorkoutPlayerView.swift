@@ -4,6 +4,7 @@ import WatchConnectivity
 struct WorkoutPlayerView: View {
     @State private var viewModel: WorkoutPlayerViewModel
     @State private var showExitConfirmation = false
+    @State private var isHandlingRemoteAction = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -27,13 +28,15 @@ struct WorkoutPlayerView: View {
         self.intervals = intervals
         self.transitionWarningDuration = transitionWarningDuration
         let musicManager: MusicPlaybackManaging? = playlistID != nil ? MusicPlaybackManager() : nil
-        let healthKit: HealthKitWorkoutRecording? = bikeManager?.isConnected == true ? LiveHealthKitWorkoutManager() : nil
         let hrStreamer: HeartRateStreaming? = WCSession.isSupported()
             ? WatchHeartRateRelay()
-            : BLEHeartRateScanner()
+            : BLEHeartRateScanner.shared
+        let hasBike = bikeManager?.isConnected == true
+        let healthKit: HealthKitWorkoutRecording? = (hasBike || hrStreamer != nil) ? LiveHealthKitWorkoutManager() : nil
         _viewModel = State(initialValue: WorkoutPlayerViewModel(
             intervals: intervals,
             timerProvider: LiveTimerProvider(),
+            speechCueProvider: LiveSpeechCueProvider.shared,
             workoutName: workoutName,
             transitionWarningDuration: transitionWarningDuration,
             musicPlaybackManager: musicManager,
@@ -68,6 +71,9 @@ struct WorkoutPlayerView: View {
         }
         .confirmationDialog("End Workout?", isPresented: $showExitConfirmation, titleVisibility: .visible) {
             Button("End Workout", role: .destructive) {
+                if !WCSession.isSupported() {
+                    BLEHeartRateScanner.shared.sendEndCommand()
+                }
                 viewModel.pause()
                 viewModel.endActivity()
                 dismiss()
@@ -81,21 +87,37 @@ struct WorkoutPlayerView: View {
             UIApplication.shared.isIdleTimerDisabled = true
             WorkoutSessionManager.shared.activeViewModel = viewModel
             viewModel.start()
-            WorkoutConnectivityManager.shared.sendWorkoutStart(
-                intervals: intervals,
-                workoutName: workoutName,
-                transitionWarningDuration: transitionWarningDuration
-            )
             if WCSession.isSupported() {
+                WorkoutConnectivityManager.shared.sendWorkoutStart(
+                    intervals: intervals,
+                    workoutName: workoutName,
+                    transitionWarningDuration: transitionWarningDuration
+                )
                 HRRelayService.shared.startAdvertising()
+            } else {
+                // iPad: sync workout to Watch over BLE
+                let transferIntervals = intervals.map {
+                    IntervalTransferData(zone: $0.zoneRawValue, duration: $0.duration)
+                }
+                let transferData = WorkoutTransferData(
+                    name: workoutName,
+                    transitionWarningDuration: transitionWarningDuration,
+                    intervals: transferIntervals,
+                    startedAt: Date()
+                )
+                BLEHeartRateScanner.shared.sendWorkoutStart(transferData)
             }
         }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
             WorkoutSessionManager.shared.activeViewModel = nil
             viewModel.stopBackgroundKeepAlive()
-            WorkoutConnectivityManager.shared.sendWorkoutEnded()
-            HRRelayService.shared.stopAdvertising()
+            if WCSession.isSupported() {
+                WorkoutConnectivityManager.shared.sendWorkoutEnded()
+                HRRelayService.shared.stopAdvertising()
+            } else {
+                BLEHeartRateScanner.shared.sendEndCommand()
+            }
         }
         .onChange(of: WorkoutConnectivityManager.shared.watchEndedWorkout) { _, ended in
             if ended {
@@ -108,6 +130,40 @@ struct WorkoutPlayerView: View {
         .onChange(of: WorkoutConnectivityManager.shared.latestWatchHeartRate) { _, bpm in
             if let bpm {
                 HRRelayService.shared.sendHeartRate(bpm)
+            }
+        }
+        .onChange(of: WorkoutConnectivityManager.shared.watchPausedWorkout) { _, paused in
+            if paused {
+                WorkoutConnectivityManager.shared.resetWatchPausedWorkout()
+                guard viewModel.isRunning else { return }
+                isHandlingRemoteAction = true
+                viewModel.pause()
+                isHandlingRemoteAction = false
+            }
+        }
+        .onChange(of: WorkoutConnectivityManager.shared.watchResumedWorkout) { _, resumed in
+            if resumed {
+                WorkoutConnectivityManager.shared.resetWatchResumedWorkout()
+                guard !viewModel.isRunning else { return }
+                isHandlingRemoteAction = true
+                viewModel.resume()
+                isHandlingRemoteAction = false
+            }
+        }
+        .onChange(of: viewModel.isRunning) { oldValue, newValue in
+            guard !isHandlingRemoteAction else { return }
+            if oldValue && !newValue && !viewModel.isFinished {
+                if WCSession.isSupported() {
+                    WorkoutConnectivityManager.shared.sendWorkoutPaused()
+                } else {
+                    BLEHeartRateScanner.shared.sendPauseCommand()
+                }
+            } else if !oldValue && newValue {
+                if WCSession.isSupported() {
+                    WorkoutConnectivityManager.shared.sendWorkoutResumed()
+                } else {
+                    BLEHeartRateScanner.shared.sendResumeCommand()
+                }
             }
         }
         .onChange(of: scenePhase) { _, newPhase in

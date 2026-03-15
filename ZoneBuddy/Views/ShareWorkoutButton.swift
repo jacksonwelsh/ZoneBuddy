@@ -25,7 +25,7 @@ final class WorkoutShareSource: NSObject, UIActivityItemSource {
         metadata.originalURL = url
         metadata.url = url
         metadata.title = workoutName
-        if let iconPath = Bundle.main.path(forResource: "zone-buddy-icon60x60@2x", ofType: "png"),
+        if let iconPath = Bundle.main.path(forResource: "zb-new@2x", ofType: "png"),
            let icon = UIImage(contentsOfFile: iconPath) {
             metadata.iconProvider = NSItemProvider(object: icon)
         }

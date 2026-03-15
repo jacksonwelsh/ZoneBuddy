@@ -109,6 +109,7 @@
 				Services/TimerProvider.swift,
 				ViewModels/WorkoutPlayerViewModel.swift,
 				Views/WorkoutProgressionBar.swift,
+				"zb-watch-icon.icon",
 			);
 			target = 5A5A00000000000000000001 /* ZoneBuddyWatch */;
 		};
@@ -133,6 +134,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
+				"zb-watch-icon.icon",
 			);
 			target = 64D3B0722F4039A800D06A68 /* ZoneBuddy */;
 		};
@@ -533,6 +535,7 @@
 		5A5A00000000000000000004 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "zb-watch-icon";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = ZoneBuddyWatch/ZoneBuddyWatch.debug.entitlements;
 				CODE_SIGN_STYLE = Automatic;
@@ -567,6 +570,7 @@
 		5A5A00000000000000000005 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "zb-watch-icon";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = ZoneBuddyWatch/ZoneBuddyWatch.release.entitlements;
 				CODE_SIGN_STYLE = Automatic;
@@ -665,7 +669,7 @@
 			baseConfigurationReferenceAnchor = 64D3B0752F4039A800D06A68 /* ZoneBuddy */;
 			baseConfigurationReferenceRelativePath = Config/Debug.xcconfig;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "zone-buddy-icon";
+				ASSETCATALOG_COMPILER_APPICON_NAME = "zb-new";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = ZoneBuddy/ZoneBuddy.debug.entitlements;
 				CODE_SIGN_STYLE = Automatic;
@@ -705,7 +709,7 @@
 			baseConfigurationReferenceAnchor = 64D3B0752F4039A800D06A68 /* ZoneBuddy */;
 			baseConfigurationReferenceRelativePath = Config/Release.xcconfig;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "zone-buddy-icon";
+				ASSETCATALOG_COMPILER_APPICON_NAME = "zb-new";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = ZoneBuddy/ZoneBuddy.release.entitlements;
 				CODE_SIGN_STYLE = Automatic;

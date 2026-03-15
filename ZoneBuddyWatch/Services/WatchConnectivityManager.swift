@@ -20,6 +20,22 @@ final class WatchConnectivityManager {
         WCSession.default.activate()
     }
 
+    func sendWorkoutPaused() {
+        guard WCSession.default.isReachable else { return }
+        WCSession.default.sendMessage(
+            [ConnectivityMessage.pauseWorkout: true],
+            replyHandler: nil
+        ) { _ in }
+    }
+
+    func sendWorkoutResumed() {
+        guard WCSession.default.isReachable else { return }
+        WCSession.default.sendMessage(
+            [ConnectivityMessage.resumeWorkout: true],
+            replyHandler: nil
+        ) { _ in }
+    }
+
     func sendWorkoutEnded() {
         guard WCSession.default.isReachable else { return }
         let message: [String: Any] = [
@@ -104,6 +120,14 @@ final class WatchConnectivityManager {
         } else if message[ConnectivityMessage.workoutEnded] != nil {
             Task { @MainActor in
                 WatchNavigationManager.shared.shouldDismissWorkout = true
+            }
+        } else if message[ConnectivityMessage.pauseWorkout] != nil {
+            Task { @MainActor in
+                WatchNavigationManager.shared.shouldPauseWorkout = true
+            }
+        } else if message[ConnectivityMessage.resumeWorkout] != nil {
+            Task { @MainActor in
+                WatchNavigationManager.shared.shouldResumeWorkout = true
             }
         }
     }

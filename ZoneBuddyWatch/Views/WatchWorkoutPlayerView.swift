@@ -3,15 +3,15 @@ import SwiftUI
 struct WatchWorkoutPlayerView: View {
     @State private var viewModel: WorkoutPlayerViewModel
     @State private var showExitConfirm = false
-    @State private var hrBroadcaster = WatchHRBroadcaster()
+    @State private var isHandlingRemoteAction = false
     @Environment(\.dismiss) private var dismiss
 
     private let isRemote: Bool
-    private let elapsedSecondsAtStart: Int
+    private let startedAt: Date?
 
     init(workout: Workout) {
         self.isRemote = false
-        self.elapsedSecondsAtStart = 0
+        self.startedAt = nil
         let healthKitManager = WatchHealthKitManager()
         _viewModel = State(initialValue: WorkoutPlayerViewModel(
             intervals: workout.sortedIntervals,
@@ -34,12 +34,9 @@ struct WatchWorkoutPlayerView: View {
                 sortOrder: index
             )
         }
-        if let startedAt = transferData.startedAt {
-            self.elapsedSecondsAtStart = max(0, Int(Date().timeIntervalSince(startedAt)))
-        } else {
-            self.elapsedSecondsAtStart = 0
-        }
+        self.startedAt = transferData.startedAt
         let healthKitManager = WatchHealthKitManager()
+        healthKitManager.saveOnEnd = false
         _viewModel = State(initialValue: WorkoutPlayerViewModel(
             intervals: intervals,
             timerProvider: LiveTimerProvider(),
@@ -68,15 +65,12 @@ struct WatchWorkoutPlayerView: View {
         }
         .navigationBarBackButtonHidden(true)
         .onAppear {
-            WatchWorkoutSessionManager.shared.startSession()
-            viewModel.start(atElapsedSeconds: elapsedSecondsAtStart)
-            hrBroadcaster.start()
+            let elapsed = startedAt.map { max(0, Int(Date().timeIntervalSince($0))) } ?? 0
+            viewModel.start(atElapsedSeconds: elapsed)
         }
         .onDisappear {
-            WatchWorkoutSessionManager.shared.endSession()
             viewModel.stopBackgroundKeepAlive()
             WatchConnectivityManager.shared.sendWorkoutEnded()
-            hrBroadcaster.stop()
             if isRemote {
                 WatchNavigationManager.shared.reset()
             }
@@ -84,15 +78,37 @@ struct WatchWorkoutPlayerView: View {
         .onChange(of: viewModel.currentHeartRate) { _, hr in
             if let hr {
                 WatchConnectivityManager.shared.sendHeartRate(hr)
-                hrBroadcaster.updateHeartRate(hr)
+                WatchHRBroadcaster.shared.updateHeartRate(hr)
             }
+        }
+        .onChange(of: viewModel.currentIntervalIndex) { oldIndex, newIndex in
+            guard newIndex != oldIndex else { return }
+            WKInterfaceDevice.current().play(.notification)
         }
         .onChange(of: WatchNavigationManager.shared.shouldDismissWorkout) { _, shouldDismiss in
             if shouldDismiss {
                 viewModel.pause()
+                viewModel.endActivity()
                 viewModel.stopBackgroundKeepAlive()
-                WatchWorkoutSessionManager.shared.endSession()
                 dismiss()
+            }
+        }
+        .onChange(of: WatchNavigationManager.shared.shouldPauseWorkout) { _, shouldPause in
+            if shouldPause {
+                WatchNavigationManager.shared.shouldPauseWorkout = false
+                guard viewModel.isRunning else { return }
+                isHandlingRemoteAction = true
+                viewModel.pause()
+                isHandlingRemoteAction = false
+            }
+        }
+        .onChange(of: WatchNavigationManager.shared.shouldResumeWorkout) { _, shouldResume in
+            if shouldResume {
+                WatchNavigationManager.shared.shouldResumeWorkout = false
+                guard !viewModel.isRunning else { return }
+                isHandlingRemoteAction = true
+                viewModel.resume()
+                isHandlingRemoteAction = false
             }
         }
     }
@@ -151,7 +167,16 @@ struct WatchWorkoutPlayerView: View {
                     .buttonStyle(.bordered)
                     .tint(.red)
 
-                    Button(action: { viewModel.togglePlayPause() }) {
+                    Button(action: {
+                        viewModel.togglePlayPause()
+                        if !isHandlingRemoteAction {
+                            if viewModel.isRunning {
+                                WatchConnectivityManager.shared.sendWorkoutResumed()
+                            } else {
+                                WatchConnectivityManager.shared.sendWorkoutPaused()
+                            }
+                        }
+                    }) {
                         Image(systemName: viewModel.isRunning ? "pause.fill" : "play.fill")
                     }
                     .buttonStyle(.bordered)
@@ -162,8 +187,8 @@ struct WatchWorkoutPlayerView: View {
         .confirmationDialog("End Workout?", isPresented: $showExitConfirm) {
             Button("End Workout", role: .destructive) {
                 viewModel.pause()
+                viewModel.endActivity()
                 viewModel.stopBackgroundKeepAlive()
-                WatchWorkoutSessionManager.shared.endSession()
                 dismiss()
             }
         }

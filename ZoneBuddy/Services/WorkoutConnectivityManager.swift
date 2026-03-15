@@ -8,6 +8,8 @@ final class WorkoutConnectivityManager {
     private(set) var isWatchReachable = false
     private(set) var latestWatchHeartRate: Int?
     private(set) var watchEndedWorkout = false
+    private(set) var watchPausedWorkout = false
+    private(set) var watchResumedWorkout = false
 
     private var sessionDelegate: SessionDelegate?
 
@@ -47,6 +49,22 @@ final class WorkoutConnectivityManager {
         }
     }
 
+    func sendWorkoutPaused() {
+        guard WCSession.default.isReachable else { return }
+        WCSession.default.sendMessage(
+            [ConnectivityMessage.pauseWorkout: true],
+            replyHandler: nil
+        ) { _ in }
+    }
+
+    func sendWorkoutResumed() {
+        guard WCSession.default.isReachable else { return }
+        WCSession.default.sendMessage(
+            [ConnectivityMessage.resumeWorkout: true],
+            replyHandler: nil
+        ) { _ in }
+    }
+
     func sendWorkoutEnded() {
         // Clear applicationContext so the Watch doesn't pick up a stale workout
         try? WCSession.default.updateApplicationContext([
@@ -69,6 +87,14 @@ final class WorkoutConnectivityManager {
         } else if message[ConnectivityMessage.workoutEnded] != nil {
             Task { @MainActor in
                 self.watchEndedWorkout = true
+            }
+        } else if message[ConnectivityMessage.pauseWorkout] != nil {
+            Task { @MainActor in
+                self.watchPausedWorkout = true
+            }
+        } else if message[ConnectivityMessage.resumeWorkout] != nil {
+            Task { @MainActor in
+                self.watchResumedWorkout = true
             }
         }
     }
@@ -108,6 +134,14 @@ final class WorkoutConnectivityManager {
 
     func resetWatchEndedWorkout() {
         watchEndedWorkout = false
+    }
+
+    func resetWatchPausedWorkout() {
+        watchPausedWorkout = false
+    }
+
+    func resetWatchResumedWorkout() {
+        watchResumedWorkout = false
     }
 
     fileprivate func updateReachability(_ reachable: Bool) {

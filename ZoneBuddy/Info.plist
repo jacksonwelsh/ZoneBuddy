@@ -8,6 +8,7 @@
 	<array>
 		<string>audio</string>
 		<string>bluetooth-central</string>
+		<string>bluetooth-peripheral</string>
 		<string>remote-notification</string>
 	</array>
 	<key>ZoneBuddyAPISecret</key>
@@ -15,7 +16,7 @@
 	<key>ZoneBuddyDevServerURL</key>
 	<string>$(ZONEBUDDY_DEV_SERVER_URL)</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>ZoneBuddy connects to your FTMS-compatible bike to display real-time power, cadence, and heart rate during workouts.</string>
+	<string>ZoneBuddy connects to your FTMS-compatible bike and receives heart rate from your Apple Watch during workouts.</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>ZoneBuddy reads your health data to display workout history.</string>
 	<key>NSHealthUpdateUsageDescription</key>

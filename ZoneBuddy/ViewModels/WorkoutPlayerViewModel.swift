@@ -212,6 +212,8 @@ final class WorkoutPlayerViewModel {
     private let heartRateStreamer: HeartRateStreaming?
     private var healthKitFlushTask: Task<Void, Never>?
     private var allBikeSamples: [BikeDataSample] = []
+    private var watchHRBuffer: [(bpm: Int, date: Date)] = []
+    private var lastBufferedHR: Int?
     private var zoneTimeAccumulator: [PowerZone: Int] = [:]
     private var lastZoneTickIndex: Int = -1
     /// Running distance in meters, computed by integrating speed over time from bike samples.
@@ -231,10 +233,10 @@ final class WorkoutPlayerViewModel {
     #if DEBUG
     private static let serverBaseURL: String = {
         let url = Bundle.main.infoDictionary?["ZoneBuddyDevServerURL"] as? String ?? ""
-        return url.isEmpty ? "http://localhost:8787" : url
+        return url.isEmpty ? "http://localhost:8787/api" : url
     }()
     #else
-    private static let serverBaseURL = "https://zonebuddy-worker.jacksn.dev"
+    private static let serverBaseURL = "https://zonebuddy.jacksn.dev/api"
     #endif
 
     // MARK: - Init
@@ -351,6 +353,14 @@ final class WorkoutPlayerViewModel {
                 if let zone = self.currentInterval?.zone {
                     self.zoneTimeAccumulator[zone, default: 0] += 1
                 }
+
+                // Buffer Watch HR for HealthKit writing (iOS only)
+                #if os(iOS)
+                if let hr = self.heartRateStreamer?.latestHeartRate, hr != self.lastBufferedHR {
+                    self.watchHRBuffer.append((bpm: hr, date: self.dateProvider()))
+                    self.lastBufferedHR = hr
+                }
+                #endif
 
                 if self.currentIntervalIndex != previousIndex {
                     self.speakCurrentLabel()
@@ -753,23 +763,37 @@ final class WorkoutPlayerViewModel {
     /// Single entry point for all HealthKit work: requests authorization once,
     /// then starts both the workout recording and HR streaming sequentially.
     private func startHealthKitAndHeartRate() {
-        guard HKHealthStore.isHealthDataAvailable() else { return }
-
-        let hasBike = bikeManager?.isConnected == true
         let startDate = workoutStartDate ?? dateProvider()
 
-        #if os(iOS)
+        #if os(watchOS)
+        // Always start HKWorkoutSession on Watch — this is the keep-alive mechanism.
+        Task {
+            if let healthKitManager {
+                let authorized = await healthKitManager.requestAuthorization()
+                if authorized {
+                    _ = await healthKitManager.startWorkout(startDate: startDate)
+                }
+            }
+            heartRateStreamer?.startMonitoring(from: startDate)
+        }
+        #else
+        let hasBike = bikeManager?.isConnected == true
+
         if hasBike, let mgr = bikeManager as? LiveBikeConnectionManager {
             mgr.clearSamples()
         }
-        #endif
         if hasBike {
             allBikeSamples = []
         }
 
+        // Always start HR streaming immediately — BLE-based streamers (iPad)
+        // don't need HealthKit and must not wait for authorization.
+        heartRateStreamer?.startMonitoring(from: startDate)
+
+        guard HKHealthStore.isHealthDataAvailable() else { return }
+
         Task {
-            // Single authorization request covering both read and write
-            if let healthKitManager, hasBike {
+            if let healthKitManager {
                 let authorized = await healthKitManager.requestAuthorization()
                 if authorized {
                     let started = await healthKitManager.startWorkout(startDate: startDate)
@@ -777,21 +801,9 @@ final class WorkoutPlayerViewModel {
                         startHealthKitFlushLoop()
                     }
                 }
-                // HR streaming starts after workout auth (which includes HR read permission)
-                heartRateStreamer?.startMonitoring(from: startDate)
-            } else if heartRateStreamer != nil {
-                // No bike — just request HR read permission and start streaming
-                let store = HKHealthStore()
-                let hrType = HKQuantityType(.heartRate)
-                do {
-                    try await store.requestAuthorization(toShare: [], read: [hrType])
-                } catch {
-                    print("HR read authorization error: \(error)")
-                    return
-                }
-                heartRateStreamer?.startMonitoring(from: startDate)
             }
         }
+        #endif
     }
 
     private func startHealthKitFlushLoop() {
@@ -806,13 +818,48 @@ final class WorkoutPlayerViewModel {
     }
 
     private func flushBikeSamplesToHealthKit() {
-        guard let bikeManager, let healthKitManager else { return }
-        let samples = bikeManager.drainSamples()
-        guard !samples.isEmpty else { return }
-        integrateSpeedSamples(samples)
-        allBikeSamples.append(contentsOf: samples)
+        guard let healthKitManager else { return }
+
+        // Drain bike samples if available
+        var bikeSamples: [BikeDataSample] = []
+        if let bikeManager {
+            bikeSamples = bikeManager.drainSamples()
+            if !bikeSamples.isEmpty {
+                integrateSpeedSamples(bikeSamples)
+                allBikeSamples.append(contentsOf: bikeSamples)
+            }
+        }
+
+        // Drain Watch HR buffer
+        let hrSamples = watchHRBuffer
+        watchHRBuffer.removeAll()
+
+        // If we have Watch HR, strip bike HR to avoid duplicates within the same workout
+        let hasWatchHR = !hrSamples.isEmpty
+        let filteredBikeSamples: [BikeDataSample]
+        if hasWatchHR {
+            filteredBikeSamples = bikeSamples.map { sample in
+                BikeDataSample(
+                    timestamp: sample.timestamp,
+                    power: sample.power,
+                    cadence: sample.cadence,
+                    heartRate: nil,
+                    speed: sample.speed,
+                    distance: sample.distance,
+                    calories: sample.calories
+                )
+            }
+        } else {
+            filteredBikeSamples = bikeSamples
+        }
+
         Task {
-            await healthKitManager.addSamples(samples)
+            if !filteredBikeSamples.isEmpty {
+                await healthKitManager.addSamples(filteredBikeSamples)
+            }
+            if !hrSamples.isEmpty {
+                await healthKitManager.addHeartRateSamples(hrSamples)
+            }
         }
     }
 
@@ -835,18 +882,34 @@ final class WorkoutPlayerViewModel {
         healthKitFlushTask?.cancel()
         healthKitFlushTask = nil
 
-        guard let bikeManager, let healthKitManager else { return }
+        #if os(watchOS)
+        if let healthKitManager {
+            let endDate = dateProvider()
+            Task {
+                await healthKitManager.endWorkout(endDate: endDate, metadata: [:])
+            }
+        }
+        #else
+        guard let healthKitManager else { return }
 
-        // Drain any remaining samples
-        let remaining = bikeManager.drainSamples()
-        allBikeSamples.append(contentsOf: remaining)
+        // Drain any remaining bike samples
+        var remaining: [BikeDataSample] = []
+        if let bikeManager {
+            remaining = bikeManager.drainSamples()
+            allBikeSamples.append(contentsOf: remaining)
+            integrateSpeedSamples(remaining)
+        }
 
-        // Integrate any remaining speed samples for distance
-        integrateSpeedSamples(remaining)
+        // Drain remaining Watch HR buffer
+        let finalHRSamples = watchHRBuffer
+        watchHRBuffer.removeAll()
 
         // Compute summary
         let powers = allBikeSamples.compactMap(\.power)
-        let heartRates = allBikeSamples.compactMap(\.heartRate)
+        let bikeHeartRates = allBikeSamples.compactMap(\.heartRate)
+        let watchHeartRates = finalHRSamples.map(\.bpm)
+        // Prefer Watch HR for summary; fall back to bike HR
+        let heartRates = watchHeartRates.isEmpty ? bikeHeartRates : watchHeartRates
 
         // Compute total output (kJ) from power samples: Σ(watts × dt) / 1000
         var totalJoules: Double = 0
@@ -861,8 +924,8 @@ final class WorkoutPlayerViewModel {
             }
         }
         let totalOutputKJ = totalJoules / 1000.0
-        // kJ ≈ kcal for cycling (metabolic efficiency ~25% cancels with kJ→kcal conversion)
-        let computedCalories = Int(totalJoules / 4184.0)
+        let cyclingEfficiency = 0.25
+        let computedCalories = Int(totalJoules / (cyclingEfficiency * 4184.0))
 
         workoutSummary = WorkoutSummary(
             avgPower: powers.isEmpty ? 0 : powers.reduce(0, +) / powers.count,
@@ -877,12 +940,39 @@ final class WorkoutPlayerViewModel {
         )
 
         let endDate = dateProvider()
-        let metadata: [String: Any] = [
-            "TotalOutputKJ": totalOutputKJ,
-        ]
+        var metadata: [String: Any] = [:]
+        if totalOutputKJ > 0 {
+            metadata["TotalOutputKJ"] = totalOutputKJ
+        }
+
+        // Strip bike HR from remaining samples if we have Watch HR
+        let hasWatchHR = !finalHRSamples.isEmpty
+        let filteredRemaining: [BikeDataSample]
+        if hasWatchHR && !remaining.isEmpty {
+            filteredRemaining = remaining.map { sample in
+                BikeDataSample(
+                    timestamp: sample.timestamp,
+                    power: sample.power,
+                    cadence: sample.cadence,
+                    heartRate: nil,
+                    speed: sample.speed,
+                    distance: sample.distance,
+                    calories: sample.calories
+                )
+            }
+        } else {
+            filteredRemaining = remaining
+        }
+
         Task {
-            await healthKitManager.addSamples(remaining)
+            if !filteredRemaining.isEmpty {
+                await healthKitManager.addSamples(filteredRemaining)
+            }
+            if !finalHRSamples.isEmpty {
+                await healthKitManager.addHeartRateSamples(finalHRSamples)
+            }
             await healthKitManager.endWorkout(endDate: endDate, metadata: metadata)
         }
+        #endif
     }
 }

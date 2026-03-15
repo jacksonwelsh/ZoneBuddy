@@ -6,8 +6,15 @@
 	<string>ZoneBuddy broadcasts your heart rate over Bluetooth so your iPad can display it during workouts.</string>
 	<key>UIBackgroundModes</key>
 	<array>
+		<string>bluetooth-central</string>
 		<string>remote-notification</string>
 	</array>
+	<key>NSHealthShareUsageDescription</key>
+	<string>ZoneBuddy reads your heart rate during workouts to display and relay to your iPhone or iPad.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>ZoneBuddy saves your cycling workouts to the Health app.</string>
+	<key>WKCompanionAppBundleIdentifier</key>
+	<string>dev.jacksn.ZoneBuddy</string>
 	<key>WKApplication</key>
 	<true/>
 	<key>WKBackgroundModes</key>
