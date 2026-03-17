@@ -9,10 +9,18 @@ final class WorkoutCreationUITests: XCTestCase {
         app.launch()
     }
 
+    private func tapNewWorkout() {
+        app.navigationBars["Workouts"].buttons["New Workout"].tap()
+        let createManually = app.buttons["Create Manually"]
+        if createManually.waitForExistence(timeout: 1) {
+            createManually.tap()
+        }
+    }
+
     @MainActor
     func testFullWorkoutCreationFlow() throws {
         // Create a new workout
-        app.navigationBars["Workouts"].buttons["New Workout"].tap()
+        tapNewWorkout()
         _ = app.navigationBars["Edit Workout"].waitForExistence(timeout: 2)
 
         // Rename the workout
@@ -31,7 +39,7 @@ final class WorkoutCreationUITests: XCTestCase {
 
     @MainActor
     func testStartRideButtonDisabledWithNoIntervals() throws {
-        app.navigationBars["Workouts"].buttons["New Workout"].tap()
+        tapNewWorkout()
         _ = app.navigationBars["Edit Workout"].waitForExistence(timeout: 2)
 
         let startButton = app.buttons["Start Ride"]

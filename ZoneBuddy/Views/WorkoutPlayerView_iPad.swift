@@ -151,6 +151,7 @@ struct WorkoutPlayerView_iPad: View {
                         HeartRateZoneBar(
                             maxHR: viewModel.currentMaxHR,
                             currentBPM: viewModel.currentHeartRate,
+                            averageBPM: viewModel.averageHeartRate,
                             compact: false
                         )
                         HStack {
@@ -158,13 +159,6 @@ struct WorkoutPlayerView_iPad: View {
                                 .font(.caption2)
                                 .foregroundStyle(.white.opacity(0.5))
                             Spacer()
-                            if let bpm = viewModel.currentHeartRate {
-                                Text("\(bpm) bpm")
-                                    .font(.caption2)
-                                    .fontWeight(.medium)
-                                    .monospacedDigit()
-                                    .foregroundStyle(.white.opacity(0.7))
-                            }
                         }
                     }
                 }

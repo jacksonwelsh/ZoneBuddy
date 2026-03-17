@@ -185,6 +185,19 @@ final class WorkoutPlayerViewModel {
         SettingsManager.shared.maxHeartRate
     }
 
+    /// Running average heart rate across the current workout session.
+    var averageHeartRate: Int? {
+        let watchBPMs = watchHRBuffer.map(\.bpm)
+        if !watchBPMs.isEmpty {
+            return watchBPMs.reduce(0, +) / watchBPMs.count
+        }
+        let bikeBPMs = allBikeSamples.compactMap(\.heartRate).filter { $0 > 0 }
+        if !bikeBPMs.isEmpty {
+            return bikeBPMs.reduce(0, +) / bikeBPMs.count
+        }
+        return nil
+    }
+
     /// Distance computed by integrating speed samples over time (meters).
     var currentTotalDistance: Double {
         computedDistanceMeters

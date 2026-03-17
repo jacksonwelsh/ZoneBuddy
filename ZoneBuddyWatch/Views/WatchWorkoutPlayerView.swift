@@ -117,30 +117,32 @@ struct WatchWorkoutPlayerView: View {
 
     private var activeZoneView: some View {
         ZStack {
-            viewModel.currentZoneColor
+            Color.black
                 .ignoresSafeArea()
+
+            WatchEdgeGlowView(zoneColor: viewModel.currentZoneColor)
 
             VStack(spacing: 6) {
                 Text(viewModel.currentLabel)
                     .font(.headline)
-                    .foregroundStyle(viewModel.currentForegroundColor)
+                    .foregroundStyle(.white)
 
                 if let zoneNum = viewModel.currentZoneNumber {
                     Text("\(zoneNum)")
                         .font(.system(size: 64, weight: .bold, design: .rounded))
-                        .foregroundStyle(viewModel.currentForegroundColor)
+                        .foregroundStyle(.white)
                         .contentTransition(.numericText())
                         .animation(.default, value: zoneNum)
                 } else {
                     Image(systemName: "flame.fill")
                         .font(.system(size: 48))
-                        .foregroundStyle(viewModel.currentForegroundColor)
+                        .foregroundStyle(.white)
                 }
 
                 if viewModel.showTimer {
                     Text(viewModel.secondsRemaining.formattedDuration)
                         .font(.system(.title3, design: .monospaced))
-                        .foregroundStyle(viewModel.currentForegroundColor)
+                        .foregroundStyle(.white)
                 }
 
                 if let hr = viewModel.currentHeartRate {
@@ -150,7 +152,7 @@ struct WatchWorkoutPlayerView: View {
                         Text("\(hr)")
                     }
                     .font(.caption)
-                    .foregroundStyle(viewModel.currentForegroundColor)
+                    .foregroundStyle(.white)
                 }
 
                 if viewModel.showTransitionBanner {

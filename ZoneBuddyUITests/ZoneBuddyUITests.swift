@@ -9,6 +9,15 @@ final class ZoneBuddyUITests: XCTestCase {
         app.launch()
     }
 
+    /// Tap the "New Workout" toolbar button, handling the Menu variant when Apple Intelligence is available.
+    private func tapNewWorkout() {
+        app.navigationBars["Workouts"].buttons["New Workout"].tap()
+        let createManually = app.buttons["Create Manually"]
+        if createManually.waitForExistence(timeout: 1) {
+            createManually.tap()
+        }
+    }
+
     @MainActor
     func testWorkoutLibraryShowsOnLaunch() throws {
         XCTAssertTrue(app.navigationBars["Workouts"].exists)
@@ -16,7 +25,7 @@ final class ZoneBuddyUITests: XCTestCase {
 
     @MainActor
     func testCreateNewWorkout() throws {
-        app.navigationBars["Workouts"].buttons["New Workout"].tap()
+        tapNewWorkout()
 
         XCTAssertTrue(app.navigationBars["Edit Workout"].waitForExistence(timeout: 2))
 
@@ -26,7 +35,7 @@ final class ZoneBuddyUITests: XCTestCase {
 
     @MainActor
     func testAddIntervalToWorkout() throws {
-        app.navigationBars["Workouts"].buttons["New Workout"].tap()
+        tapNewWorkout()
         _ = app.navigationBars["Edit Workout"].waitForExistence(timeout: 2)
 
         app.buttons["Add"].tap()

@@ -8,6 +8,7 @@ struct WorkoutLibraryView: View {
     @Query(sort: \Workout.sortOrder) private var workouts: [Workout]
     @State private var navigateToNewWorkout: Workout?
     @State private var showSettings = false
+    @State private var showGenerateSheet = false
     @State private var navigationPath = NavigationPath()
     @Binding var pendingImport: WorkoutTransferData?
 
@@ -79,10 +80,27 @@ struct WorkoutLibraryView: View {
                 }
 
                 ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        addWorkoutToTop(Workout(name: "New Workout"), navigate: true)
-                    } label: {
-                        Label("New Workout", systemImage: "plus")
+                    if WorkoutGenerationService.isAvailable {
+                        Menu {
+                            Button {
+                                addWorkoutToTop(Workout(name: "New Workout"), navigate: true)
+                            } label: {
+                                Label("Create Manually", systemImage: "plus")
+                            }
+                            Button {
+                                showGenerateSheet = true
+                            } label: {
+                                Label("Generate with AI", systemImage: "sparkles")
+                            }
+                        } label: {
+                            Label("New Workout", systemImage: "plus")
+                        }
+                    } else {
+                        Button {
+                            addWorkoutToTop(Workout(name: "New Workout"), navigate: true)
+                        } label: {
+                            Label("New Workout", systemImage: "plus")
+                        }
                     }
                 }
             }
@@ -94,6 +112,11 @@ struct WorkoutLibraryView: View {
             }
             .sheet(item: $pendingImport) { data in
                 WorkoutImportView(workoutData: data)
+            }
+            .sheet(isPresented: $showGenerateSheet) {
+                WorkoutGenerationView { workout in
+                    navigateToNewWorkout = workout
+                }
             }
             .onAppear {
                 // Handle cold-launch: intent may fire before onChange attaches
