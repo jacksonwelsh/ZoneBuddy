@@ -150,6 +150,33 @@ struct WorkoutPlayerView: View {
                 isHandlingRemoteAction = false
             }
         }
+        // BLE Watch→iPad commands (iPad only — WCSession not supported on iPad)
+        .onChange(of: BLEHeartRateScanner.shared.watchEndedWorkout) { _, ended in
+            if ended {
+                BLEHeartRateScanner.shared.resetWatchEndedWorkout()
+                viewModel.pause()
+                viewModel.endActivity()
+                dismiss()
+            }
+        }
+        .onChange(of: BLEHeartRateScanner.shared.watchPausedWorkout) { _, paused in
+            if paused {
+                BLEHeartRateScanner.shared.resetWatchPausedWorkout()
+                guard viewModel.isRunning else { return }
+                isHandlingRemoteAction = true
+                viewModel.pause()
+                isHandlingRemoteAction = false
+            }
+        }
+        .onChange(of: BLEHeartRateScanner.shared.watchResumedWorkout) { _, resumed in
+            if resumed {
+                BLEHeartRateScanner.shared.resetWatchResumedWorkout()
+                guard !viewModel.isRunning else { return }
+                isHandlingRemoteAction = true
+                viewModel.resume()
+                isHandlingRemoteAction = false
+            }
+        }
         .onChange(of: viewModel.isRunning) { oldValue, newValue in
             guard !isHandlingRemoteAction else { return }
             if oldValue && !newValue && !viewModel.isFinished {

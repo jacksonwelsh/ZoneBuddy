@@ -144,23 +144,15 @@ struct WorkoutPlayerView_iPad: View {
                 }
             }
 
-            // HR zone bar — always shown on iPad when HR data is available
-            if viewModel.currentHeartRate != nil {
+            // HR zone bar — shown once any HR data has been received
+            if viewModel.averageHeartRate != nil {
                 DataTile(isVisible: true) {
-                    VStack(spacing: 4) {
-                        HeartRateZoneBar(
-                            maxHR: viewModel.currentMaxHR,
-                            currentBPM: viewModel.currentHeartRate,
-                            averageBPM: viewModel.averageHeartRate,
-                            compact: false
-                        )
-                        HStack {
-                            Text("HR Zones")
-                                .font(.caption2)
-                                .foregroundStyle(.white.opacity(0.5))
-                            Spacer()
-                        }
-                    }
+                    HeartRateZoneBar(
+                        maxHR: viewModel.currentMaxHR,
+                        currentBPM: viewModel.currentHeartRate,
+                        averageBPM: viewModel.averageHeartRate,
+                        compact: false
+                    )
                 }
             }
         }

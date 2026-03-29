@@ -96,6 +96,7 @@
 				Assets.xcassets,
 				"Extensions/Duration+Formatting.swift",
 				Models/BikeDataSample.swift,
+				Models/HeartRateZone.swift,
 				Models/Interval.swift,
 				Models/PowerZone.swift,
 				Models/Workout.swift,

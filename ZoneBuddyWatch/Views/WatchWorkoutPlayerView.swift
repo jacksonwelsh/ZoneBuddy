@@ -56,8 +56,10 @@ struct WatchWorkoutPlayerView: View {
             } else {
                 TabView {
                     activeZoneView
+                        .toolbar(.hidden, for: .navigationBar)
                         .tag(0)
                     intervalOverviewView
+                        .toolbar(.visible, for: .navigationBar)
                         .tag(1)
                 }
                 .tabViewStyle(.verticalPage)
@@ -71,6 +73,7 @@ struct WatchWorkoutPlayerView: View {
         .onDisappear {
             viewModel.stopBackgroundKeepAlive()
             WatchConnectivityManager.shared.sendWorkoutEnded()
+            WatchHRBroadcaster.shared.sendWatchEnded()
             if isRemote {
                 WatchNavigationManager.shared.reset()
             }
@@ -85,31 +88,23 @@ struct WatchWorkoutPlayerView: View {
             guard newIndex != oldIndex else { return }
             WKInterfaceDevice.current().play(.notification)
         }
-        .onChange(of: WatchNavigationManager.shared.shouldDismissWorkout) { _, shouldDismiss in
-            if shouldDismiss {
-                viewModel.pause()
-                viewModel.endActivity()
-                viewModel.stopBackgroundKeepAlive()
-                dismiss()
-            }
+        .onReceive(NotificationCenter.default.publisher(for: .watchReceivedDismiss)) { _ in
+            viewModel.pause()
+            viewModel.endActivity()
+            viewModel.stopBackgroundKeepAlive()
+            dismiss()
         }
-        .onChange(of: WatchNavigationManager.shared.shouldPauseWorkout) { _, shouldPause in
-            if shouldPause {
-                WatchNavigationManager.shared.shouldPauseWorkout = false
-                guard viewModel.isRunning else { return }
-                isHandlingRemoteAction = true
-                viewModel.pause()
-                isHandlingRemoteAction = false
-            }
+        .onReceive(NotificationCenter.default.publisher(for: .watchReceivedPause)) { _ in
+            guard viewModel.isRunning else { return }
+            isHandlingRemoteAction = true
+            viewModel.pause()
+            isHandlingRemoteAction = false
         }
-        .onChange(of: WatchNavigationManager.shared.shouldResumeWorkout) { _, shouldResume in
-            if shouldResume {
-                WatchNavigationManager.shared.shouldResumeWorkout = false
-                guard !viewModel.isRunning else { return }
-                isHandlingRemoteAction = true
-                viewModel.resume()
-                isHandlingRemoteAction = false
-            }
+        .onReceive(NotificationCenter.default.publisher(for: .watchReceivedResume)) { _ in
+            guard !viewModel.isRunning else { return }
+            isHandlingRemoteAction = true
+            viewModel.resume()
+            isHandlingRemoteAction = false
         }
     }
 
@@ -127,10 +122,18 @@ struct WatchWorkoutPlayerView: View {
                     .font(.headline)
                     .foregroundStyle(.white)
 
+                // Transition banner — always in layout so nothing shifts
+                WatchTransitionBannerView(
+                    upcomingLabel: viewModel.upcomingLabel,
+                    upcomingColor: viewModel.upcomingZoneColor
+                )
+                .opacity(viewModel.showTransitionBanner ? 1 : 0)
+                .animation(.easeInOut(duration: 0.4), value: viewModel.showTransitionBanner)
+
                 if let zoneNum = viewModel.currentZoneNumber {
                     Text("\(zoneNum)")
-                        .font(.system(size: 64, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
+                        .font(.system(size: 48, weight: .bold, design: .rounded))
+                        .foregroundStyle(viewModel.currentZoneColor)
                         .contentTransition(.numericText())
                         .animation(.default, value: zoneNum)
                 } else {
@@ -140,48 +143,63 @@ struct WatchWorkoutPlayerView: View {
                 }
 
                 if viewModel.showTimer {
+                    // Timer centered; HR overlaid at bottom-leading so it doesn't shift centering
                     Text(viewModel.secondsRemaining.formattedDuration)
-                        .font(.system(.title3, design: .monospaced))
+                        .font(.system(size: 28, weight: .light, design: .rounded).monospacedDigit())
                         .foregroundStyle(.white)
-                }
-
-                if let hr = viewModel.currentHeartRate {
-                    HStack(spacing: 4) {
-                        Image(systemName: "heart.fill")
-                            .foregroundStyle(.red)
-                        Text("\(hr)")
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.white)
-                }
-
-                if viewModel.showTransitionBanner {
-                    WatchTransitionBannerView(
-                        upcomingLabel: viewModel.upcomingLabel,
-                        upcomingColor: viewModel.upcomingZoneColor
+                        .contentTransition(.numericText())
+                        .frame(maxWidth: .infinity)
+                        .overlay(alignment: .bottomLeading) {
+                            HStack(spacing: 3) {
+                                Image(systemName: "heart.fill")
+                                    .foregroundStyle(.red)
+                                Text(viewModel.currentHeartRate.map { "\($0)" } ?? "--")
+                                    .monospacedDigit()
+                            }
+                            .font(.caption2)
+                            .foregroundStyle(.white)
+                        }
+                    WatchHeartRateBarView(
+                        currentBPM: viewModel.currentHeartRate,
+                        maxHR: viewModel.currentMaxHR,
+                        showLabel: false
+                    )
+                } else {
+                    WatchHeartRateBarView(
+                        currentBPM: viewModel.currentHeartRate,
+                        maxHR: viewModel.currentMaxHR
                     )
                 }
 
-                HStack(spacing: 16) {
+                HStack(spacing: 12) {
                     Button(action: { showExitConfirm = true }) {
                         Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.red)
+                            .frame(width: 36, height: 36)
+                            .background(.red.opacity(0.2), in: .circle)
                     }
-                    .buttonStyle(.bordered)
-                    .tint(.red)
+                    .buttonStyle(.plain)
 
                     Button(action: {
                         viewModel.togglePlayPause()
                         if !isHandlingRemoteAction {
                             if viewModel.isRunning {
                                 WatchConnectivityManager.shared.sendWorkoutResumed()
+                                WatchHRBroadcaster.shared.sendWatchResumed()
                             } else {
                                 WatchConnectivityManager.shared.sendWorkoutPaused()
+                                WatchHRBroadcaster.shared.sendWatchPaused()
                             }
                         }
                     }) {
                         Image(systemName: viewModel.isRunning ? "pause.fill" : "play.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 36, height: 36)
+                            .background(.white.opacity(0.2), in: .circle)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.plain)
                 }
             }
             .padding()

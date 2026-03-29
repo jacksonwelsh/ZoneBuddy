@@ -152,7 +152,10 @@ final class WorkoutPlayerViewModel {
         if let live = healthKitManager?.liveCalories {
             return Int(live)
         }
-        return allBikeSamples.last?.calories
+        // Always compute from integrated power output — bike-reported calories are unreliable
+        guard let outputKJ = currentTotalOutputKJ else { return nil }
+        let cyclingEfficiency = 0.25
+        return Int(outputKJ * 1000.0 / (cyclingEfficiency * 4184.0))
     }
 
     var currentTotalOutputKJ: Double? {
@@ -187,9 +190,8 @@ final class WorkoutPlayerViewModel {
 
     /// Running average heart rate across the current workout session.
     var averageHeartRate: Int? {
-        let watchBPMs = watchHRBuffer.map(\.bpm)
-        if !watchBPMs.isEmpty {
-            return watchBPMs.reduce(0, +) / watchBPMs.count
+        if !allHRSamples.isEmpty {
+            return allHRSamples.reduce(0, +) / allHRSamples.count
         }
         let bikeBPMs = allBikeSamples.compactMap(\.heartRate).filter { $0 > 0 }
         if !bikeBPMs.isEmpty {
@@ -226,6 +228,7 @@ final class WorkoutPlayerViewModel {
     private var healthKitFlushTask: Task<Void, Never>?
     private var allBikeSamples: [BikeDataSample] = []
     private var watchHRBuffer: [(bpm: Int, date: Date)] = []
+    private var allHRSamples: [Int] = []
     private var lastBufferedHR: Int?
     private var zoneTimeAccumulator: [PowerZone: Int] = [:]
     private var lastZoneTickIndex: Int = -1
@@ -369,9 +372,12 @@ final class WorkoutPlayerViewModel {
 
                 // Buffer Watch HR for HealthKit writing (iOS only)
                 #if os(iOS)
-                if let hr = self.heartRateStreamer?.latestHeartRate, hr != self.lastBufferedHR {
-                    self.watchHRBuffer.append((bpm: hr, date: self.dateProvider()))
-                    self.lastBufferedHR = hr
+                if let hr = self.heartRateStreamer?.latestHeartRate {
+                    self.allHRSamples.append(hr)
+                    if hr != self.lastBufferedHR {
+                        self.watchHRBuffer.append((bpm: hr, date: self.dateProvider()))
+                        self.lastBufferedHR = hr
+                    }
                 }
                 #endif
 

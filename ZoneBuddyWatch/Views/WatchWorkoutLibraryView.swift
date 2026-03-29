@@ -58,6 +58,11 @@ struct WatchWorkoutLibraryView: View {
                 navigationPath.append(WatchPlayerDestination.remote)
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .watchReceivedDismiss)) { _ in
+            if !navigationPath.isEmpty {
+                navigationPath = NavigationPath()
+            }
+        }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .active:

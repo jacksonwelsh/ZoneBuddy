@@ -100,13 +100,6 @@ struct PowerZoneBar: View {
                         Rectangle()
                             .fill(isTarget ? zone.color.opacity(0.25) : .clear)
                             .frame(width: segWidth, height: barHeight)
-                            .overlay(alignment: .leading) {
-                                if !isFirst {
-                                    Rectangle()
-                                        .fill(Color.white.opacity(0.15))
-                                        .frame(width: 1)
-                                }
-                            }
                             .overlay {
                                 if isTarget {
                                     UnevenRoundedRectangle(
@@ -116,6 +109,8 @@ struct PowerZoneBar: View {
                                         topTrailingRadius: isLast ? cr : 0
                                     )
                                     .strokeBorder(zone.color.opacity(isAboveTarget ? 0.7 : 0.5), lineWidth: isAboveTarget ? 2 : 1.5)
+                                    .padding(.leading, isFirst ? 0 : 1)
+                                    .padding(.trailing, isLast ? 0 : 1)
                                 }
                             }
                     }
@@ -142,6 +137,24 @@ struct PowerZoneBar: View {
                         .shadow(color: isInTarget ? fillColor.opacity(0.6) : .clear, radius: isInTarget ? 6 : 0)
                         .animation(.smooth(duration: 0.3), value: power)
                 }
+
+                // Zone gap dividers (rendered on top so they cut through fill bar too)
+                HStack(spacing: 0) {
+                    ForEach(Array(allZones.enumerated()), id: \.element) { index, zone in
+                        let fraction = (spans[zone] ?? 1) / totalSpan
+                        Rectangle()
+                            .fill(Color.clear)
+                            .frame(width: CGFloat(fraction) * totalWidth, height: barHeight)
+                            .overlay(alignment: .leading) {
+                                if index != 0 {
+                                    Rectangle()
+                                        .fill(Color.black.opacity(0.5))
+                                        .frame(width: 2)
+                                }
+                            }
+                    }
+                }
+                .clipShape(Capsule())
             }
         }
         .frame(height: barHeight)

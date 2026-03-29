@@ -1,6 +1,12 @@
 import CoreBluetooth
 import HealthKit
 
+extension Notification.Name {
+    static let watchReceivedPause = Notification.Name("watchReceivedPause")
+    static let watchReceivedResume = Notification.Name("watchReceivedResume")
+    static let watchReceivedDismiss = Notification.Name("watchReceivedDismiss")
+}
+
 /// Sends heart rate from the Watch to a nearby iPad via BLE.
 ///
 /// Starts at app launch and runs independently of workouts:
@@ -38,6 +44,12 @@ final class WatchHRBroadcaster {
     func updateHeartRate(_ bpm: Int) {
         centralDelegate?.updateHeartRate(bpm)
     }
+
+    /// Send a command from Watch to iPad (pause/resume/end).
+    /// Byte values must match BLECommand constants on the iPad side.
+    func sendWatchPaused() { centralDelegate?.sendWatchCommand(0x02) }
+    func sendWatchResumed() { centralDelegate?.sendWatchCommand(0x03) }
+    func sendWatchEnded() { centralDelegate?.sendWatchCommand(0x04) }
 
     // MARK: - Passive HR Monitoring
 
@@ -109,11 +121,14 @@ final class WatchHRBroadcaster {
         nonisolated(unsafe) static let serviceUUID = CBUUID(string: "B5E5D4A1-4F2C-4C33-9E01-1A2B3C4D5E6F")
         nonisolated(unsafe) static let hrCharUUID = CBUUID(string: "B5E5D4A2-4F2C-4C33-9E01-1A2B3C4D5E6F")
         nonisolated(unsafe) static let commandCharUUID = CBUUID(string: "B5E5D4A3-4F2C-4C33-9E01-1A2B3C4D5E6F")
+        /// Watch → iPad command channel (Watch writes commands here)
+        nonisolated(unsafe) static let watchCommandCharUUID = CBUUID(string: "B5E5D4A4-4F2C-4C33-9E01-1A2B3C4D5E6F")
 
         private var manager: CBCentralManager?
         private var connectedPeripheral: CBPeripheral?
         private var hrCharacteristic: CBCharacteristic?
         private var commandCharacteristic: CBCharacteristic?
+        private var watchCommandCharacteristic: CBCharacteristic?
         /// Set to true after receiving a startWorkout notification, cleared after the read completes.
         private var awaitingWorkoutRead = false
 
@@ -131,6 +146,7 @@ final class WatchHRBroadcaster {
             connectedPeripheral = nil
             hrCharacteristic = nil
             commandCharacteristic = nil
+            watchCommandCharacteristic = nil
             manager = nil
         }
 
@@ -139,6 +155,12 @@ final class WatchHRBroadcaster {
                   let characteristic = hrCharacteristic else { return }
             let data = Data([UInt8(clamping: bpm)])
             peripheral.writeValue(data, for: characteristic, type: .withResponse)
+        }
+
+        func sendWatchCommand(_ command: UInt8) {
+            guard let peripheral = connectedPeripheral,
+                  let characteristic = watchCommandCharacteristic else { return }
+            peripheral.writeValue(Data([command]), for: characteristic, type: .withoutResponse)
         }
 
         // MARK: - CBCentralManagerDelegate
@@ -199,7 +221,10 @@ final class WatchHRBroadcaster {
             guard let services = peripheral.services else { return }
             print("WatchHRBroadcaster: discovered \(services.count) service(s)")
             for service in services where service.uuid == Self.serviceUUID {
-                peripheral.discoverCharacteristics([Self.hrCharUUID, Self.commandCharUUID], for: service)
+                peripheral.discoverCharacteristics(
+                    [Self.hrCharUUID, Self.commandCharUUID, Self.watchCommandCharUUID],
+                    for: service
+                )
             }
         }
 
@@ -221,6 +246,11 @@ final class WatchHRBroadcaster {
                     peripheral.setNotifyValue(true, for: characteristic)
                     Task { @MainActor in
                         self.commandCharacteristic = characteristic
+                    }
+                } else if characteristic.uuid == Self.watchCommandCharUUID {
+                    print("WatchHRBroadcaster: found Watch command characteristic, ready to send")
+                    Task { @MainActor in
+                        self.watchCommandCharacteristic = characteristic
                     }
                 }
             }
@@ -250,13 +280,13 @@ final class WatchHRBroadcaster {
                     peripheral.readValue(for: characteristic)
                 case 0x02: // pauseWorkout
                     print("WatchHRBroadcaster: received pauseWorkout command")
-                    WatchNavigationManager.shared.shouldPauseWorkout = true
+                    NotificationCenter.default.post(name: .watchReceivedPause, object: nil)
                 case 0x03: // resumeWorkout
                     print("WatchHRBroadcaster: received resumeWorkout command")
-                    WatchNavigationManager.shared.shouldResumeWorkout = true
+                    NotificationCenter.default.post(name: .watchReceivedResume, object: nil)
                 case 0x04: // endWorkout
                     print("WatchHRBroadcaster: received endWorkout command")
-                    WatchNavigationManager.shared.shouldDismissWorkout = true
+                    NotificationCenter.default.post(name: .watchReceivedDismiss, object: nil)
                 default:
                     print("WatchHRBroadcaster: unknown command \(command)")
                 }

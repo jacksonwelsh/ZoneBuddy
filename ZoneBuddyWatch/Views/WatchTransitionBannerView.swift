@@ -17,5 +17,6 @@ struct WatchTransitionBannerView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
         .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().strokeBorder(Color.white.opacity(0.25), lineWidth: 1))
     }
 }

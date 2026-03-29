@@ -119,15 +119,15 @@ final class WatchConnectivityManager {
             }
         } else if message[ConnectivityMessage.workoutEnded] != nil {
             Task { @MainActor in
-                WatchNavigationManager.shared.shouldDismissWorkout = true
+                NotificationCenter.default.post(name: .watchReceivedDismiss, object: nil)
             }
         } else if message[ConnectivityMessage.pauseWorkout] != nil {
             Task { @MainActor in
-                WatchNavigationManager.shared.shouldPauseWorkout = true
+                NotificationCenter.default.post(name: .watchReceivedPause, object: nil)
             }
         } else if message[ConnectivityMessage.resumeWorkout] != nil {
             Task { @MainActor in
-                WatchNavigationManager.shared.shouldResumeWorkout = true
+                NotificationCenter.default.post(name: .watchReceivedResume, object: nil)
             }
         }
     }
@@ -141,7 +141,7 @@ final class WatchConnectivityManager {
             WatchNavigationManager.shared.shouldStartWorkout = true
             stopPolling()
         } else if context[ConnectivityMessage.workoutEnded] != nil {
-            WatchNavigationManager.shared.shouldDismissWorkout = true
+            NotificationCenter.default.post(name: .watchReceivedDismiss, object: nil)
         }
     }
 

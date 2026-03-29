@@ -1,12 +1,16 @@
 import SwiftUI
 
-struct HeartRateZoneBar: View {
-    let maxHR: Int
+/// Compact heart-rate zone bar for the Watch active-zone screen.
+/// Always occupies the same vertical space so the surrounding layout
+/// never shifts when HR data appears or disappears.
+struct WatchHeartRateBarView: View {
     let currentBPM: Int?
-    var averageBPM: Int? = nil
-    var compact: Bool = true
+    let maxHR: Int
+    var showLabel: Bool = true
 
-    private var barHeight: CGFloat { compact ? 14 : 22 }
+    private let barHeight: CGFloat = 10
+
+    // MARK: - Helpers (mirrors HeartRateZoneBar logic)
 
     private func zoneSpans() -> [HeartRateZone: Double] {
         var spans: [HeartRateZone: Double] = [:]
@@ -21,11 +25,9 @@ struct HeartRateZoneBar: View {
         let spans = zoneSpans()
         let totalSpan = spans.values.reduce(0, +)
         var cumulativeSpan: Double = 0
-
         for zone in HeartRateZone.allCases {
             let range = zone.bpmRange(maxHR: maxHR)
             let span = spans[zone] ?? 1
-
             if bpm <= range.upperBound || zone == .zone5 {
                 let frac = Double(bpm - range.lowerBound) / Double(max(range.upperBound - range.lowerBound, 1))
                 let clampedFrac = min(max(frac, 0), 1)
@@ -36,8 +38,23 @@ struct HeartRateZoneBar: View {
         return 1.0
     }
 
+    // MARK: - Body
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 3) {
+            // BPM label above top-left of bar (optional — callers may render it elsewhere)
+            if showLabel {
+                HStack(spacing: 3) {
+                    Image(systemName: "heart.fill")
+                        .foregroundStyle(.red)
+                    Text(currentBPM.map { "\($0)" } ?? "--")
+                        .monospacedDigit()
+                }
+                .font(.caption2)
+                .foregroundStyle(.white)
+            }
+
+            // Zone bar
             GeometryReader { geo in
                 let totalWidth = geo.size.width
                 let spans = zoneSpans()
@@ -68,18 +85,16 @@ struct HeartRateZoneBar: View {
                         let fillColor = hrZone?.color ?? Color.gray
 
                         Capsule()
-                            .fill(
-                                LinearGradient(
-                                    colors: [fillColor.opacity(0.6), fillColor],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
+                            .fill(LinearGradient(
+                                colors: [fillColor.opacity(0.6), fillColor],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            ))
                             .frame(width: fillWidth, height: barHeight)
                             .animation(.smooth(duration: 0.3), value: bpm)
                     }
 
-                    // Zone gap dividers (rendered on top so they cut through fill bar too)
+                    // Zone gap dividers
                     HStack(spacing: 0) {
                         ForEach(HeartRateZone.allCases) { zone in
                             let fraction = (spans[zone] ?? 1) / totalSpan
@@ -99,16 +114,6 @@ struct HeartRateZoneBar: View {
                 }
             }
             .frame(height: barHeight)
-
-            if let avg = averageBPM {
-                HStack {
-                    Text("Average \(avg) BPM")
-                        .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.5))
-                        .monospacedDigit()
-                    Spacer()
-                }
-            }
         }
     }
 }
