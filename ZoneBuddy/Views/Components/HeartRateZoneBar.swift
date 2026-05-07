@@ -5,6 +5,7 @@ struct HeartRateZoneBar: View {
     let currentBPM: Int?
     var averageBPM: Int? = nil
     var compact: Bool = true
+    var isPaused: Bool = false
 
     private var barHeight: CGFloat { compact ? 14 : 22 }
 
@@ -70,7 +71,9 @@ struct HeartRateZoneBar: View {
                         Capsule()
                             .fill(
                                 LinearGradient(
-                                    colors: [fillColor.opacity(0.6), fillColor],
+                                    colors: isPaused
+                                        ? [Color.gray.opacity(0.4), Color.gray.opacity(0.65)]
+                                        : [fillColor.opacity(0.6), fillColor],
                                     startPoint: .leading,
                                     endPoint: .trailing
                                 )

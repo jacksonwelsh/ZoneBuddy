@@ -107,6 +107,10 @@ final class WorkoutPlayerViewModel {
         currentIntervalIndex == intervals.count - 1
     }
 
+    var isPaused: Bool {
+        !isRunning && activityHasStarted && !isFinished
+    }
+
     // MARK: - FTP & Power Zone Computed Properties
 
     var currentFTP: Int {
@@ -331,6 +335,16 @@ final class WorkoutPlayerViewModel {
             speakCurrentLabel(delay: musicPlaybackManager != nil)
             startHealthKitAndHeartRate()
         } else {
+            // Discard any bike samples that accumulated during the pause,
+            // then restart the HealthKit flush loop from a clean baseline.
+            #if !os(watchOS)
+            _ = bikeManager?.drainSamples()
+            lastSpeedSampleDate = nil
+            if healthKitManager != nil {
+                startHealthKitFlushLoop()
+            }
+            #endif
+            healthKitManager?.resumeWorkout()
             activityManager?.updateActivity(state: makeActivityState())
             reregisterAfterPause()
             musicPlaybackManager?.resumePlayback()
@@ -400,6 +414,16 @@ final class WorkoutPlayerViewModel {
         workoutStartDate = nil
         timerTask?.cancel()
         timerTask = nil
+
+        // Flush any remaining bike/HR samples from this segment so they are
+        // counted in running averages and the HealthKit record before the pause.
+        healthKitFlushTask?.cancel()
+        healthKitFlushTask = nil
+        #if !os(watchOS)
+        flushBikeSamplesToHealthKit()
+        lastSpeedSampleDate = nil
+        #endif
+        healthKitManager?.pauseWorkout()
 
         // Stop polling and cancel the server-side workout so it stops sending pushes.
         pushTokenPollTask?.cancel()

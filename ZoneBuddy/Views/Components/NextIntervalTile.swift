@@ -8,32 +8,37 @@ struct NextIntervalTile: View {
 
     var body: some View {
         if !nextLabel.isEmpty {
-            HStack(spacing: 12) {
-                Text("UP NEXT")
-                    .font(.caption2)
-                    .fontWeight(.bold)
-                    .tracking(1)
-                    .foregroundStyle(foregroundColor.opacity(0.5))
-
-                if let zone = nextZone {
-                    Circle()
-                        .fill(zone.color)
-                        .frame(width: 10, height: 10)
+            VStack(spacing: 4) {
+                // Zone number + name on one line, like "210 W"
+                HStack(alignment: .lastTextBaseline, spacing: 4) {
+                    if let zone = nextZone {
+                        Text("Z\(zone.rawValue)")
+                            .font(.system(size: 36, weight: .bold, design: .rounded))
+                            .foregroundStyle(zone.labelColor)
+                    } else {
+                        Image(systemName: "flame.fill")
+                            .font(.system(size: 28, weight: .bold))
+                            .foregroundStyle(.orange)
+                    }
+                    Text(nextLabel)
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundStyle(foregroundColor)
                 }
 
-                Text(nextLabel)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundStyle(foregroundColor)
-
-                if let duration = nextDuration {
-                    Text(duration.formattedDuration)
-                        .font(.subheadline)
-                        .monospacedDigit()
-                        .foregroundStyle(foregroundColor.opacity(0.7))
+                // "UP NEXT • Zone Name  5:00"
+                Group {
+                    if let duration = nextDuration {
+                        Text("Up Next \u{2022} \(duration.formattedDuration)")
+                    } else {
+                        Text("Up Next")
+                    }
                 }
-
-                Spacer()
+                .font(.caption2)
+                .textCase(.uppercase)
+                .tracking(0.5)
+                .monospacedDigit()
+                .foregroundStyle(foregroundColor.opacity(0.6))
             }
         }
     }

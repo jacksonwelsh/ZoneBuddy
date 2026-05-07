@@ -158,8 +158,29 @@ final class LiveHealthKitWorkoutManager: HealthKitWorkoutRecording {
         }
     }
 
-    func pauseWorkout() {}
-    func resumeWorkout() {}
+    func pauseWorkout() {
+        guard let builder = workoutBuilder else { return }
+        let event = HKWorkoutEvent(type: .pause, dateInterval: DateInterval(start: Date(), duration: 0), metadata: nil)
+        Task {
+            do {
+                try await builder.addWorkoutEvents([event])
+            } catch {
+                print("HealthKit addWorkoutEvents(.pause) error: \(error)")
+            }
+        }
+    }
+
+    func resumeWorkout() {
+        guard let builder = workoutBuilder else { return }
+        let event = HKWorkoutEvent(type: .resume, dateInterval: DateInterval(start: Date(), duration: 0), metadata: nil)
+        Task {
+            do {
+                try await builder.addWorkoutEvents([event])
+            } catch {
+                print("HealthKit addWorkoutEvents(.resume) error: \(error)")
+            }
+        }
+    }
 
     func endWorkout(endDate: Date, metadata: [String: Any]) async {
         guard let builder = workoutBuilder else { return }

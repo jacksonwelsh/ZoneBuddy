@@ -5,6 +5,7 @@ struct PowerZoneBar: View {
     let targetZone: PowerZone?
     let currentPower: Int?
     var compact: Bool = true
+    var isPaused: Bool = false
 
     private var barHeight: CGFloat { compact ? 14 : 22 }
 
@@ -128,13 +129,15 @@ struct PowerZoneBar: View {
                     Capsule()
                         .fill(
                             LinearGradient(
-                                colors: [fillColor.opacity(0.6), fillColor],
+                                colors: isPaused
+                                    ? [Color.gray.opacity(0.4), Color.gray.opacity(0.65)]
+                                    : [fillColor.opacity(0.6), fillColor],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
                         )
                         .frame(width: fillWidth, height: barHeight)
-                        .shadow(color: isInTarget ? fillColor.opacity(0.6) : .clear, radius: isInTarget ? 6 : 0)
+                        .shadow(color: (!isPaused && isInTarget) ? fillColor.opacity(0.6) : .clear, radius: (!isPaused && isInTarget) ? 6 : 0)
                         .animation(.smooth(duration: 0.3), value: power)
                 }
 

@@ -15,16 +15,17 @@ struct PowerMetricTile: View {
                     .font(.caption)
                     .fontWeight(.medium)
             }
-            if let power, ftp > 0 {
-                Text("\(Int((Double(power) / Double(ftp)) * 100))% FTP")
-                    .font(.caption2)
-                    .foregroundStyle(foregroundColor.opacity(0.7))
+            Group {
+                if let power, ftp > 0 {
+                    Text("Power \u{2022} \(Int((Double(power) / Double(ftp)) * 100))% FTP")
+                } else {
+                    Text("Power")
+                }
             }
-            Text("Power")
-                .font(.caption2)
-                .textCase(.uppercase)
-                .tracking(0.5)
-                .foregroundStyle(foregroundColor.opacity(0.6))
+            .font(.caption2)
+            .textCase(.uppercase)
+            .tracking(0.5)
+            .foregroundStyle(foregroundColor.opacity(0.6))
         }
         .foregroundStyle(foregroundColor)
     }
@@ -47,14 +48,31 @@ struct CadenceTile: View {
 struct HeartRateTile: View {
     let heartRate: Int?
     let foregroundColor: Color
+    var averageBPM: Int? = nil
 
     var body: some View {
-        MetricValueView(
-            value: heartRate.map { "\($0)" } ?? "--",
-            unit: "bpm",
-            label: "Heart Rate",
-            foregroundColor: foregroundColor
-        )
+        VStack(spacing: 4) {
+            HStack(alignment: .lastTextBaseline, spacing: 4) {
+                Text(heartRate.map { "\($0)" } ?? "--")
+                    .font(.system(size: 36, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                Text("bpm")
+                    .font(.caption)
+                    .fontWeight(.medium)
+            }
+            Group {
+                if let avg = averageBPM {
+                    Text("Heart Rate \u{2022} Avg \(avg) bpm")
+                } else {
+                    Text("Heart Rate")
+                }
+            }
+            .font(.caption2)
+            .textCase(.uppercase)
+            .tracking(0.5)
+            .foregroundStyle(foregroundColor.opacity(0.6))
+        }
+        .foregroundStyle(foregroundColor)
     }
 }
 

@@ -15,6 +15,13 @@ enum PowerZone: Int, Codable, CaseIterable, Identifiable, Sendable {
         Color("Zone\(rawValue)Color")
     }
 
+    /// Contrast-safe color for use as text on the workout screen.
+    /// Returns a darker shade in light mode (≥4.5:1 on white) and the
+    /// original vibrant color in dark mode — automatically via asset catalog.
+    var labelColor: Color {
+        Color("Zone\(rawValue)LabelColor")
+    }
+
     var displayName: String {
         "Zone \(rawValue)"
     }

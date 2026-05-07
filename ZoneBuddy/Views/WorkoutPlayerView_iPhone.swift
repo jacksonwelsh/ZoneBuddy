@@ -27,6 +27,12 @@ struct WorkoutPlayerView_iPhone: View {
         isBikeConnected ? .white : viewModel.currentForegroundColor
     }
 
+    /// Gray foreground used for live metrics (Power, HR, Cadence, Speed) when paused.
+    /// When not paused falls back to fgColor so callers need not branch.
+    private var liveMetricColor: Color {
+        viewModel.isPaused ? Color(white: 0.58) : fgColor
+    }
+
     var body: some View {
         ZStack {
             // Background: solid zone color (no bike) or black + edge glow (bike connected)
@@ -131,10 +137,18 @@ struct WorkoutPlayerView_iPhone: View {
             }
 
             if viewModel.showTimer {
-                Text(viewModel.secondsRemaining.formattedDuration)
-                    .font(.system(size: 60, weight: .light, design: .rounded).monospacedDigit())
-                    .foregroundStyle(fgColor)
-                    .contentTransition(.numericText())
+                HStack(spacing: 12) {
+                    Text(viewModel.secondsRemaining.formattedDuration)
+                        .font(.system(size: 60, weight: .light, design: .rounded).monospacedDigit())
+                        .foregroundStyle(fgColor)
+                        .contentTransition(.numericText())
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                    Text("Remaining")
+                        .font(.subheadline)
+                        .foregroundStyle(fgColor.opacity(0.6))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.horizontal, 24)
             }
 
             Spacer()
@@ -145,13 +159,14 @@ struct WorkoutPlayerView_iPhone: View {
                     ftp: viewModel.currentFTP,
                     targetZone: viewModel.currentInterval?.zone,
                     currentPower: viewModel.currentBikeData?.instantaneousPower,
-                    compact: true
+                    compact: true,
+                    isPaused: viewModel.isPaused
                 )
                 .padding(.horizontal, 24)
             }
 
             // Control buttons
-            HStack(spacing: 24) {
+            VStack(spacing: 8) {
                 Button {
                     viewModel.togglePlayPause()
                 } label: {
@@ -256,7 +271,8 @@ struct WorkoutPlayerView_iPhone: View {
                         ftp: viewModel.currentFTP,
                         targetZone: viewModel.currentInterval?.zone,
                         currentPower: viewModel.currentBikeData?.instantaneousPower,
-                        compact: true
+                        compact: true,
+                        isPaused: viewModel.isPaused
                     )
                     .padding(.horizontal, 24)
                 }
@@ -338,7 +354,7 @@ struct WorkoutPlayerView_iPhone: View {
                             PowerMetricTile(
                                 power: viewModel.currentBikeData?.instantaneousPower,
                                 ftp: viewModel.currentFTP,
-                                foregroundColor: fgColor
+                                foregroundColor: liveMetricColor
                             )
                         }
                     }
@@ -346,7 +362,7 @@ struct WorkoutPlayerView_iPhone: View {
                         DataTile(isVisible: true) {
                             CadenceTile(
                                 cadence: viewModel.currentBikeData?.instantaneousCadence,
-                                foregroundColor: fgColor
+                                foregroundColor: liveMetricColor
                             )
                         }
                     }
@@ -359,7 +375,7 @@ struct WorkoutPlayerView_iPhone: View {
                         DataTile(isVisible: true) {
                             HeartRateTile(
                                 heartRate: viewModel.currentHeartRate,
-                                foregroundColor: fgColor
+                                foregroundColor: liveMetricColor
                             )
                         }
                     }
@@ -367,7 +383,7 @@ struct WorkoutPlayerView_iPhone: View {
                         DataTile(isVisible: true) {
                             SpeedTile(
                                 speed: viewModel.currentBikeData?.instantaneousSpeed,
-                                foregroundColor: fgColor
+                                foregroundColor: liveMetricColor
                             )
                         }
                     }

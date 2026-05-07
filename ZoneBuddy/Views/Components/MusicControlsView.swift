@@ -7,19 +7,18 @@ struct MusicControlsView: View {
     let zoneColor: Color
     var compact: Bool = true
 
+    @ObservedObject private var queue = SystemMusicPlayer.shared.queue
+    @ObservedObject private var playerState = SystemMusicPlayer.shared.state
+
     private var buttonSize: CGFloat { compact ? 40 : 52 }
     private var iconSize: CGFloat { compact ? 16 : 20 }
-
-    private var currentEntry: MusicPlayer.Queue.Entry? {
-        SystemMusicPlayer.shared.queue.currentEntry
-    }
 
     var body: some View {
         if compact {
             controlButtons
         } else {
             HStack(spacing: 16) {
-                if let entry = currentEntry {
+                if let entry = queue.currentEntry {
                     HStack(spacing: 12) {
                         if let artwork = entry.artwork {
                             ArtworkImage(artwork, width: 44, height: 44)
@@ -68,7 +67,7 @@ struct MusicControlsView: View {
                     Task { try? await player.play() }
                 }
             } label: {
-                Image(systemName: SystemMusicPlayer.shared.state.playbackStatus == .playing ? "pause.fill" : "play.fill")
+                Image(systemName: playerState.playbackStatus == .playing ? "pause.fill" : "play.fill")
                     .font(.system(size: iconSize, weight: .semibold))
                     .foregroundStyle(foregroundColor)
                     .frame(width: buttonSize, height: buttonSize)
