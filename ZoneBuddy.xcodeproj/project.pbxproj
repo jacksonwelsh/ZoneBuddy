@@ -106,6 +106,7 @@
 				Services/ActivityManaging.swift,
 				Services/ConnectivityMessages.swift,
 				Services/DataStore.swift,
+				Services/FTPTestProtocol.swift,
 				Services/HealthKitProtocols.swift,
 				Services/SettingsManager.swift,
 				Services/SpeechCueProviding.swift,

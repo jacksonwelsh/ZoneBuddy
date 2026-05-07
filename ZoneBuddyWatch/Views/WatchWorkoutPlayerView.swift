@@ -20,9 +20,11 @@ struct WatchWorkoutPlayerView: View {
             activityManager: NoOpActivityManager(),
             speechCueProvider: WatchSpeechCueProvider(),
             workoutName: workout.name,
+            templateID: workout.id,
             transitionWarningDuration: workout.transitionWarningDuration,
             healthKitManager: healthKitManager,
-            heartRateStreamer: healthKitManager
+            heartRateStreamer: healthKitManager,
+            shouldPersistSession: true
         ))
     }
 
@@ -46,7 +48,8 @@ struct WatchWorkoutPlayerView: View {
             workoutName: transferData.name,
             transitionWarningDuration: transferData.transitionWarningDuration,
             healthKitManager: healthKitManager,
-            heartRateStreamer: healthKitManager
+            heartRateStreamer: healthKitManager,
+            shouldPersistSession: false
         ))
     }
 

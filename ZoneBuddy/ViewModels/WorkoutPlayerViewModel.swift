@@ -45,6 +45,16 @@ final class WorkoutPlayerViewModel {
     private(set) var showTransitionBanner: Bool = false
     private(set) var workoutSummary: WorkoutSummary?
     private(set) var savedSession: WorkoutSession?
+    /// Average power held during the FTP test interval, computed at workout end.
+    /// Nil when not in FTP test mode or when no power samples were captured.
+    private(set) var ftpTestAvgPower: Int?
+
+    var computedFTPFromTest: Int? {
+        guard let avg = ftpTestAvgPower else { return nil }
+        return FTPTestProtocol.computeFTP(avgPower: avg)
+    }
+
+    var isFTPTest: Bool { ftpTestIntervalIndex != nil }
     var showTimer: Bool = true
     var audioCuesEnabled: Bool = SettingsManager.shared.audioCuesEnabled
 
@@ -232,6 +242,10 @@ final class WorkoutPlayerViewModel {
     let bikeManager: BikeConnecting?
     private let healthKitManager: HealthKitWorkoutRecording?
     private let heartRateStreamer: HeartRateStreaming?
+    let ftpTestIntervalIndex: Int?
+    private let shouldPersistSession: Bool
+    private var ftpTestStartedAt: Date?
+    private var ftpTestEndedAt: Date?
     private var healthKitFlushTask: Task<Void, Never>?
     private var allBikeSamples: [BikeDataSample] = []
     private var watchHRBuffer: [(bpm: Int, date: Date)] = []
@@ -283,7 +297,9 @@ final class WorkoutPlayerViewModel {
         playlistAutoMix: Bool = false,
         bikeManager: BikeConnecting? = nil,
         healthKitManager: HealthKitWorkoutRecording? = nil,
-        heartRateStreamer: HeartRateStreaming? = nil
+        heartRateStreamer: HeartRateStreaming? = nil,
+        ftpTestIntervalIndex: Int? = nil,
+        shouldPersistSession: Bool = true
     ) {
         self.intervals = intervals
         self.timerProvider = timerProvider
@@ -302,6 +318,8 @@ final class WorkoutPlayerViewModel {
         self.bikeManager = bikeManager
         self.healthKitManager = healthKitManager
         self.heartRateStreamer = heartRateStreamer
+        self.ftpTestIntervalIndex = ftpTestIntervalIndex
+        self.shouldPersistSession = shouldPersistSession
         if let first = intervals.first {
             self.secondsRemaining = first.duration
         }
@@ -406,20 +424,21 @@ final class WorkoutPlayerViewModel {
                     self.hrZoneTimeAccumulator[hrZone, default: 0] += 1
                 }
 
-                // Buffer Watch HR for HealthKit writing (iOS only)
-                #if os(iOS)
+                // Collect HR samples for summary on all platforms; buffer for HealthKit write on iOS only.
                 if let hr = self.heartRateStreamer?.latestHeartRate {
                     self.allHRSamples.append(hr)
+                    #if os(iOS)
                     if hr != self.lastBufferedHR {
                         self.watchHRBuffer.append((bpm: hr, date: self.dateProvider()))
                         self.lastBufferedHR = hr
                     }
+                    #endif
                 }
-                #endif
 
                 if self.currentIntervalIndex != previousIndex {
                     self.speakCurrentLabel()
                     self.activityManager?.updateActivity(state: self.makeActivityState())
+                    self.handleFTPTestIntervalTransition(from: previousIndex, to: self.currentIntervalIndex)
                 }
             }
         }
@@ -946,6 +965,31 @@ final class WorkoutPlayerViewModel {
         }
     }
 
+    private func handleFTPTestIntervalTransition(from previousIndex: Int, to newIndex: Int) {
+        guard let testIndex = ftpTestIntervalIndex else { return }
+        let now = dateProvider()
+        if newIndex == testIndex && ftpTestStartedAt == nil {
+            ftpTestStartedAt = now
+        }
+        if previousIndex == testIndex && ftpTestEndedAt == nil {
+            ftpTestEndedAt = now
+        }
+    }
+
+    /// Computes the average power held during the FTP test interval from `allBikeSamples`,
+    /// filtered to power values > 0 within the test interval's time window. Called from
+    /// `finishHealthKitWorkout()` after the final sample drain.
+    private func finalizeFTPTestAvgPower() {
+        guard ftpTestIntervalIndex != nil, let start = ftpTestStartedAt else { return }
+        let end = ftpTestEndedAt ?? dateProvider()
+        let testPowers = allBikeSamples
+            .filter { $0.timestamp >= start && $0.timestamp <= end }
+            .compactMap(\.power)
+            .filter { $0 > 0 }
+        guard !testPowers.isEmpty else { return }
+        ftpTestAvgPower = testPowers.reduce(0, +) / testPowers.count
+    }
+
     private func finishHealthKitWorkout() {
         healthKitFlushTask?.cancel()
         healthKitFlushTask = nil
@@ -957,6 +1001,19 @@ final class WorkoutPlayerViewModel {
                 await healthKitManager.endWorkout(endDate: endDate, metadata: [:])
             }
         }
+
+        if shouldPersistSession {
+            let summaryAvgHR = allHRSamples.isEmpty ? nil : allHRSamples.reduce(0, +) / allHRSamples.count
+            let summaryMaxHR = allHRSamples.max()
+            persistWorkoutSession(
+                avgPower: 0,
+                maxPower: 0,
+                totalOutputKJ: 0,
+                computedCalories: 0,
+                avgHeartRate: summaryAvgHR,
+                maxHeartRate: summaryMaxHR
+            )
+        }
         #else
         guard let healthKitManager else { return }
 
@@ -967,6 +1024,8 @@ final class WorkoutPlayerViewModel {
             allBikeSamples.append(contentsOf: remaining)
             integrateSpeedSamples(remaining)
         }
+
+        finalizeFTPTestAvgPower()
 
         // Drain remaining Watch HR buffer (still needed for HealthKit sample writing)
         let finalHRSamples = watchHRBuffer
@@ -1012,14 +1071,16 @@ final class WorkoutPlayerViewModel {
             zoneTimeBreakdown: zoneTimeAccumulator
         )
 
-        persistWorkoutSession(
-            avgPower: summaryAvgPower,
-            maxPower: summaryMaxPower,
-            totalOutputKJ: totalOutputKJ,
-            computedCalories: computedCalories,
-            avgHeartRate: summaryAvgHR,
-            maxHeartRate: summaryMaxHR
-        )
+        if shouldPersistSession {
+            persistWorkoutSession(
+                avgPower: summaryAvgPower,
+                maxPower: summaryMaxPower,
+                totalOutputKJ: totalOutputKJ,
+                computedCalories: computedCalories,
+                avgHeartRate: summaryAvgHR,
+                maxHeartRate: summaryMaxHR
+            )
+        }
 
         let endDate = dateProvider()
         var metadata: [String: Any] = [:]
@@ -1058,7 +1119,6 @@ final class WorkoutPlayerViewModel {
         #endif
     }
 
-    #if !os(watchOS)
     private func persistWorkoutSession(
         avgPower: Int,
         maxPower: Int,
@@ -1109,5 +1169,4 @@ final class WorkoutPlayerViewModel {
             print("Failed to save WorkoutSession: \(error)")
         }
     }
-    #endif
 }

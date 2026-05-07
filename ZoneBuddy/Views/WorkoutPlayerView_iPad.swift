@@ -16,6 +16,15 @@ struct WorkoutPlayerView_iPad: View {
         viewModel.isConnectedToBike
     }
 
+    private var isFTPTest: Bool { viewModel.isFTPTest }
+
+    private var displayLabel: String {
+        if isFTPTest {
+            return FTPTestProtocol.phaseLabel(forIndex: viewModel.currentIntervalIndex)
+        }
+        return viewModel.currentLabel
+    }
+
     /// Primary content color — white in dark mode, black in light mode.
     private var fg: Color { colorScheme == .dark ? .white : .black }
 
@@ -167,7 +176,11 @@ struct WorkoutPlayerView_iPad: View {
                 // Zone display — no card, number left / name+range right, centered in half
                 HStack(alignment: .center, spacing: 16) {
                     Group {
-                        if let zoneNumber = viewModel.currentZoneNumber {
+                        if isFTPTest {
+                            Image(systemName: "stopwatch")
+                                .font(.system(size: 60))
+                                .foregroundStyle(fg)
+                        } else if let zoneNumber = viewModel.currentZoneNumber {
                             Text("\(zoneNumber)")
                                 .font(.system(size: 80, weight: .bold, design: .rounded))
                                 .foregroundStyle(currentZoneLabelColor)
@@ -180,12 +193,12 @@ struct WorkoutPlayerView_iPad: View {
                     }
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(viewModel.currentLabel)
+                        Text(displayLabel)
                             .font(.title3)
                             .fontWeight(.medium)
                             .foregroundStyle(fg)
 
-                        if let rangeDesc = viewModel.targetRangeDescription {
+                        if !isFTPTest, let rangeDesc = viewModel.targetRangeDescription {
                             Text(rangeDesc)
                                 .font(.headline)
                                 .foregroundStyle(fg.opacity(0.7))
@@ -229,7 +242,7 @@ struct WorkoutPlayerView_iPad: View {
             }
 
             // Power bar spanning full width — no card
-            if settings.layoutPreferences.showPowerBar {
+            if !isFTPTest, settings.layoutPreferences.showPowerBar {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("POWER")
                         .font(.caption)
@@ -275,7 +288,7 @@ struct WorkoutPlayerView_iPad: View {
     @ViewBuilder
     private var metricsGrid: some View {
         LazyVGrid(columns: columns, spacing: 16) {
-            if settings.layoutPreferences.showPower {
+            if !isFTPTest, settings.layoutPreferences.showPower {
                 DataTile(isVisible: true) {
                     PowerMetricTile(
                         power: viewModel.currentBikeData?.instantaneousPower,
@@ -331,7 +344,7 @@ struct WorkoutPlayerView_iPad: View {
                 }
             }
 
-            if settings.layoutPreferences.showAvgPower {
+            if !isFTPTest, settings.layoutPreferences.showAvgPower {
                 DataTile(isVisible: true) {
                     AvgPowerTile(
                         avgPower: viewModel.currentAvgPower,
@@ -340,7 +353,7 @@ struct WorkoutPlayerView_iPad: View {
                 }
             }
 
-            if settings.layoutPreferences.showOutput {
+            if !isFTPTest, settings.layoutPreferences.showOutput {
                 DataTile(isVisible: true) {
                     OutputTile(
                         outputKJ: viewModel.currentTotalOutputKJ,
@@ -349,7 +362,7 @@ struct WorkoutPlayerView_iPad: View {
                 }
             }
 
-            if let next = viewModel.nextInterval {
+            if !isFTPTest, let next = viewModel.nextInterval {
                 DataTile(isVisible: true) {
                     NextIntervalTile(
                         nextZone: next.zone,
@@ -382,7 +395,16 @@ struct WorkoutPlayerView_iPad: View {
 
     @ViewBuilder
     private var completionView: some View {
-        if let session = viewModel.savedSession {
+        if isFTPTest {
+            FTPTestResultView(
+                avgPower: viewModel.ftpTestAvgPower,
+                computedFTP: viewModel.computedFTPFromTest,
+                onDone: {
+                    viewModel.endActivity()
+                    dismiss()
+                }
+            )
+        } else if let session = viewModel.savedSession {
             NavigationStack {
                 WorkoutSessionDetailView(
                     session: session,

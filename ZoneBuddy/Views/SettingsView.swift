@@ -61,10 +61,15 @@ struct SettingsView: View {
                         Text("bpm")
                             .foregroundStyle(.secondary)
                     }
+                    NavigationLink {
+                        FTPTestIntroView(bikeManager: bikeManager)
+                    } label: {
+                        Label("Take FTP Test", systemImage: "stopwatch")
+                    }
                 } header: {
                     Text("Training")
                 } footer: {
-                    Text("FTP is used for power zone ranges (50–500W). Max HR is used for heart rate zone ranges (100–230 bpm).")
+                    Text("Take an FTP test to measure your threshold power, or enter it manually above. Max HR is used for heart rate zone ranges (100–230 bpm).")
                 }
 
                 Section("Defaults") {

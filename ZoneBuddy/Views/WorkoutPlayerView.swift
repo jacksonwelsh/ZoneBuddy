@@ -29,7 +29,8 @@ struct WorkoutPlayerView: View {
         playlistShuffle: Bool = false,
         playlistRepeat: Bool = false,
         playlistAutoMix: Bool = false,
-        bikeManager: BikeConnecting? = nil
+        bikeManager: BikeConnecting? = nil,
+        ftpTestIntervalIndex: Int? = nil
     ) {
         self.workoutName = workoutName
         self.intervals = intervals
@@ -41,7 +42,8 @@ struct WorkoutPlayerView: View {
                 timerProvider: LiveTimerProvider(),
                 workoutName: workoutName,
                 templateID: templateID,
-                transitionWarningDuration: transitionWarningDuration
+                transitionWarningDuration: transitionWarningDuration,
+                ftpTestIntervalIndex: ftpTestIntervalIndex
             ))
             return
         }
@@ -68,7 +70,8 @@ struct WorkoutPlayerView: View {
             playlistAutoMix: playlistAutoMix,
             bikeManager: resolvedBike,
             healthKitManager: healthKit,
-            heartRateStreamer: hrStreamer
+            heartRateStreamer: hrStreamer,
+            ftpTestIntervalIndex: ftpTestIntervalIndex
         ))
     }
 

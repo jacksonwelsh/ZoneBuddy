@@ -7,6 +7,9 @@ import FTMSKit
 /// the "stuck at zero" state, or skip the bike entirely.
 struct BikePromptSheet: View {
     var bikeManager: BikeConnecting = LiveBikeConnectionManager.shared
+    /// When true, the user cannot Skip — they must connect a bike that's reporting non-zero
+    /// metrics before Start is enabled. Used by FTP test where measured power is required.
+    var requireBike: Bool = false
     let onStart: () -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -26,9 +29,16 @@ struct BikePromptSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Skip") {
-                        bikeManager.stopScanning()
-                        onStart()
+                    if requireBike {
+                        Button("Cancel") {
+                            bikeManager.stopScanning()
+                            dismiss()
+                        }
+                    } else {
+                        Button("Skip") {
+                            bikeManager.stopScanning()
+                            onStart()
+                        }
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {

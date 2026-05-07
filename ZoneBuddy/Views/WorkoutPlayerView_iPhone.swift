@@ -17,6 +17,17 @@ struct WorkoutPlayerView_iPhone: View {
         viewModel.isConnectedToBike
     }
 
+    private var isFTPTest: Bool { viewModel.isFTPTest }
+
+    /// In FTP test mode, replace the zone-derived label with a phase label
+    /// (Warmup / FTP Test / Cooldown).
+    private var displayLabel: String {
+        if isFTPTest {
+            return FTPTestProtocol.phaseLabel(forIndex: viewModel.currentIntervalIndex)
+        }
+        return viewModel.currentLabel
+    }
+
     /// Accent color: zone color used for text/icons on the dark background mode.
     private var accentColor: Color {
         viewModel.currentZoneColor
@@ -112,12 +123,16 @@ struct WorkoutPlayerView_iPhone: View {
 
             Spacer()
 
-            Text(viewModel.currentLabel)
+            Text(displayLabel)
                 .font(.title)
                 .fontWeight(.medium)
                 .foregroundStyle(isBikeConnected ? accentColor : fgColor)
 
-            if let zoneNumber = viewModel.currentZoneNumber {
+            if isFTPTest {
+                Image(systemName: "stopwatch")
+                    .font(.system(size: 120))
+                    .foregroundStyle(isBikeConnected ? .white : fgColor)
+            } else if let zoneNumber = viewModel.currentZoneNumber {
                 Text("\(zoneNumber)")
                     .font(.system(size: 200, weight: .bold, design: .rounded))
                     .foregroundStyle(isBikeConnected ? accentColor : fgColor)
@@ -128,8 +143,9 @@ struct WorkoutPlayerView_iPhone: View {
                     .foregroundStyle(isBikeConnected ? .orange : fgColor)
             }
 
-            // Target watt range below zone number
-            if let rangeDesc = viewModel.targetRangeDescription {
+            // Target watt range below zone number — hidden in FTP test mode
+            // (no FTP yet to compute zones from; showing watts would prime pacing).
+            if !isFTPTest, let rangeDesc = viewModel.targetRangeDescription {
                 Text(rangeDesc)
                     .font(.title2)
                     .fontWeight(.medium)
@@ -154,7 +170,9 @@ struct WorkoutPlayerView_iPhone: View {
             Spacer()
 
             // Power bar (only when bike connected — no value without power data)
-            if isBikeConnected, settings.layoutPreferences.showPowerBar {
+            // Always hidden in FTP test mode: no known FTP means no zones to render,
+            // and showing live power biases first-time pacers (research-driven choice).
+            if !isFTPTest, isBikeConnected, settings.layoutPreferences.showPowerBar {
                 PowerZoneBar(
                     ftp: viewModel.currentFTP,
                     targetZone: viewModel.currentInterval?.zone,
@@ -227,7 +245,11 @@ struct WorkoutPlayerView_iPhone: View {
             HStack(alignment: .center, spacing: 24) {
                 // Upper left: large zone number
                 Group {
-                    if let zoneNumber = viewModel.currentZoneNumber {
+                    if isFTPTest {
+                        Image(systemName: "stopwatch")
+                            .font(.system(size: 80))
+                            .foregroundStyle(isBikeConnected ? .white : fgColor)
+                    } else if let zoneNumber = viewModel.currentZoneNumber {
                         Text("\(zoneNumber)")
                             .font(.system(size: 130, weight: .bold, design: .rounded))
                             .foregroundStyle(isBikeConnected ? accentColor : fgColor)
@@ -242,12 +264,12 @@ struct WorkoutPlayerView_iPhone: View {
 
                 // Upper right: zone name + target watts + time remaining
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(viewModel.currentLabel)
+                    Text(displayLabel)
                         .font(.largeTitle)
                         .fontWeight(.semibold)
                         .foregroundStyle(isBikeConnected ? accentColor : fgColor)
 
-                    if let rangeDesc = viewModel.targetRangeDescription {
+                    if !isFTPTest, let rangeDesc = viewModel.targetRangeDescription {
                         Text(rangeDesc)
                             .font(.title2)
                             .fontWeight(.medium)
@@ -266,7 +288,7 @@ struct WorkoutPlayerView_iPhone: View {
 
             // Bottom: power bar + controls
             VStack(spacing: 10) {
-                if isBikeConnected, settings.layoutPreferences.showPowerBar {
+                if !isFTPTest, isBikeConnected, settings.layoutPreferences.showPowerBar {
                     PowerZoneBar(
                         ftp: viewModel.currentFTP,
                         targetZone: viewModel.currentInterval?.zone,
@@ -337,7 +359,7 @@ struct WorkoutPlayerView_iPhone: View {
             VStack(spacing: 12) {
                 Color.clear.frame(height: 56)
 
-                if settings.layoutPreferences.showZoneInfo {
+                if !isFTPTest, settings.layoutPreferences.showZoneInfo {
                     DataTile(isVisible: true) {
                         ZoneInfoTile(
                             zone: viewModel.currentInterval?.zone,
@@ -349,7 +371,7 @@ struct WorkoutPlayerView_iPhone: View {
 
                 // Primary metrics row
                 HStack(spacing: 12) {
-                    if settings.layoutPreferences.showPower {
+                    if !isFTPTest, settings.layoutPreferences.showPower {
                         DataTile(isVisible: true) {
                             PowerMetricTile(
                                 power: viewModel.currentBikeData?.instantaneousPower,
@@ -412,7 +434,7 @@ struct WorkoutPlayerView_iPhone: View {
                 .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: 12) {
-                    if settings.layoutPreferences.showAvgPower {
+                    if !isFTPTest, settings.layoutPreferences.showAvgPower {
                         DataTile(isVisible: true) {
                             AvgPowerTile(
                                 avgPower: viewModel.currentAvgPower,
@@ -420,7 +442,7 @@ struct WorkoutPlayerView_iPhone: View {
                             )
                         }
                     }
-                    if settings.layoutPreferences.showOutput {
+                    if !isFTPTest, settings.layoutPreferences.showOutput {
                         DataTile(isVisible: true) {
                             OutputTile(
                                 outputKJ: viewModel.currentTotalOutputKJ,
@@ -483,7 +505,16 @@ struct WorkoutPlayerView_iPhone: View {
 
     @ViewBuilder
     private var completionView: some View {
-        if let session = viewModel.savedSession {
+        if isFTPTest {
+            FTPTestResultView(
+                avgPower: viewModel.ftpTestAvgPower,
+                computedFTP: viewModel.computedFTPFromTest,
+                onDone: {
+                    viewModel.endActivity()
+                    dismiss()
+                }
+            )
+        } else if let session = viewModel.savedSession {
             NavigationStack {
                 WorkoutSessionDetailView(
                     session: session,
