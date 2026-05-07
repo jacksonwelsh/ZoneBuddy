@@ -4,6 +4,7 @@ struct WatchWorkoutPlayerView: View {
     @State private var viewModel: WorkoutPlayerViewModel
     @State private var showExitConfirm = false
     @State private var isHandlingRemoteAction = false
+    @State private var selectedTab = 0
     @Environment(\.dismiss) private var dismiss
 
     private let isRemote: Bool
@@ -54,15 +55,14 @@ struct WatchWorkoutPlayerView: View {
             if viewModel.isFinished {
                 finishedView
             } else {
-                TabView {
+                TabView(selection: $selectedTab) {
                     activeZoneView
-                        .toolbar(.hidden, for: .navigationBar)
                         .tag(0)
                     intervalOverviewView
-                        .toolbar(.visible, for: .navigationBar)
                         .tag(1)
                 }
                 .tabViewStyle(.verticalPage)
+                .toolbar(selectedTab == 0 ? .hidden : .visible, for: .navigationBar)
             }
         }
         .navigationBarBackButtonHidden(true)

@@ -1,6 +1,12 @@
 import SwiftUI
 import WatchConnectivity
 
+/// True when running inside Xcode's SwiftUI preview host (PreviewShell).
+/// Used to skip live BLE/HealthKit/ActivityKit/audio side effects that crash the preview process.
+var isXcodePreview: Bool {
+    ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
+}
+
 struct WorkoutPlayerView: View {
     @State private var viewModel: WorkoutPlayerViewModel
     @State private var showExitConfirmation = false
@@ -23,16 +29,29 @@ struct WorkoutPlayerView: View {
         playlistShuffle: Bool = false,
         playlistRepeat: Bool = false,
         playlistAutoMix: Bool = false,
-        bikeManager: BikeConnecting? = LiveBikeConnectionManager.shared
+        bikeManager: BikeConnecting? = nil
     ) {
         self.workoutName = workoutName
         self.intervals = intervals
         self.transitionWarningDuration = transitionWarningDuration
+
+        if isXcodePreview {
+            _viewModel = State(initialValue: WorkoutPlayerViewModel(
+                intervals: intervals,
+                timerProvider: LiveTimerProvider(),
+                workoutName: workoutName,
+                templateID: templateID,
+                transitionWarningDuration: transitionWarningDuration
+            ))
+            return
+        }
+
+        let resolvedBike = bikeManager ?? LiveBikeConnectionManager.shared
         let musicManager: MusicPlaybackManaging? = playlistID != nil ? MusicPlaybackManager() : nil
         let hrStreamer: HeartRateStreaming? = WCSession.isSupported()
             ? WatchHeartRateRelay()
             : BLEHeartRateScanner.shared
-        let hasBike = bikeManager?.isConnected == true
+        let hasBike = resolvedBike.isConnected
         let healthKit: HealthKitWorkoutRecording? = (hasBike || hrStreamer != nil) ? LiveHealthKitWorkoutManager() : nil
         _viewModel = State(initialValue: WorkoutPlayerViewModel(
             intervals: intervals,
@@ -47,7 +66,7 @@ struct WorkoutPlayerView: View {
             playlistShuffle: playlistShuffle,
             playlistRepeat: playlistRepeat,
             playlistAutoMix: playlistAutoMix,
-            bikeManager: bikeManager,
+            bikeManager: resolvedBike,
             healthKitManager: healthKit,
             heartRateStreamer: hrStreamer
         ))
@@ -86,6 +105,7 @@ struct WorkoutPlayerView: View {
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
         .onAppear {
+            if isXcodePreview { return }
             UIApplication.shared.isIdleTimerDisabled = true
             WorkoutSessionManager.shared.activeViewModel = viewModel
             viewModel.start()
