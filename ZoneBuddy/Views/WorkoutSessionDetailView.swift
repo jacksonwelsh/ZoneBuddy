@@ -1,15 +1,26 @@
 import SwiftUI
 import SwiftData
 
+enum WorkoutSessionDetailMode {
+    case history
+    case completion(onDone: () -> Void)
+}
+
 struct WorkoutSessionDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     let session: WorkoutSession
+    var mode: WorkoutSessionDetailMode = .history
 
     @State private var showDeleteConfirm = false
 
     private static var usesMetric: Bool {
         Locale.current.measurementSystem != .us
+    }
+
+    private var isCompletion: Bool {
+        if case .completion = mode { return true }
+        return false
     }
 
     var body: some View {
@@ -20,17 +31,31 @@ struct WorkoutSessionDetailView: View {
                 metricsGrid
                 powerZoneSection
                 hrZoneSection
+
+                if case .completion(let onDone) = mode {
+                    Button(action: onDone) {
+                        Text("Done")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .padding(.top, 8)
+                }
             }
             .padding()
         }
-        .navigationTitle(session.name.isEmpty ? "Workout" : session.name)
+        .navigationTitle(isCompletion ? "" : (session.name.isEmpty ? "Workout" : session.name))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(role: .destructive) {
-                    showDeleteConfirm = true
-                } label: {
-                    Label("Delete", systemImage: "trash")
+            if !isCompletion {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(role: .destructive) {
+                        showDeleteConfirm = true
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
                 }
             }
         }
@@ -49,7 +74,16 @@ struct WorkoutSessionDetailView: View {
 
     // MARK: - Sections
 
+    @ViewBuilder
     private var header: some View {
+        if isCompletion {
+            completionHeader
+        } else {
+            historyHeader
+        }
+    }
+
+    private var historyHeader: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(session.completedAt.formatted(date: .complete, time: .shortened))
                 .font(.subheadline)
@@ -58,6 +92,59 @@ struct WorkoutSessionDetailView: View {
                 .font(.system(size: 40, weight: .bold, design: .rounded))
                 .monospacedDigit()
         }
+    }
+
+    private var completionHeader: some View {
+        let primaryZone = dominantZoneColor()
+        return VStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [primaryZone.opacity(0.35), primaryZone.opacity(0.05)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 110, height: 110)
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 64, weight: .semibold))
+                    .foregroundStyle(primaryZone)
+                    .symbolEffect(.bounce, options: .nonRepeating)
+            }
+            .padding(.top, 8)
+
+            Text("Workout Complete")
+                .font(.system(.largeTitle, design: .rounded).weight(.bold))
+
+            VStack(spacing: 2) {
+                if !session.name.isEmpty {
+                    Text(session.name)
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+                }
+                Text(session.totalDuration.formattedDuration)
+                    .font(.system(size: 48, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(primaryZone)
+            }
+            .padding(.top, 4)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    /// Pick a representative color for the celebratory header — the zone the user spent
+    /// the most on-target time in, falling back to scheduled time, then accent color.
+    private func dominantZoneColor() -> Color {
+        let onTarget = session.onTargetSecondsByZone.max(by: { $0.value < $1.value })
+        if let onTarget, onTarget.value > 0 {
+            return onTarget.key.color
+        }
+        let scheduled = session.scheduledSecondsByZone.max(by: { $0.value < $1.value })
+        if let scheduled, scheduled.value > 0 {
+            return scheduled.key.color
+        }
+        return .accentColor
     }
 
     @ViewBuilder
@@ -456,6 +543,24 @@ private func makePreviewSession(richBikeData: Bool) -> (ModelContainer, WorkoutS
     let (container, session) = makePreviewSession(richBikeData: false)
     return NavigationStack {
         WorkoutSessionDetailView(session: session)
+    }
+    .modelContainer(container)
+    .previewDevice(PreviewDevice(rawValue: "iPad Pro 13-inch (M5)"))
+}
+
+#Preview("iPhone \u{2014} Completion") {
+    let (container, session) = makePreviewSession(richBikeData: true)
+    return NavigationStack {
+        WorkoutSessionDetailView(session: session, mode: .completion(onDone: {}))
+    }
+    .modelContainer(container)
+    .previewDevice(PreviewDevice(rawValue: "iPhone 17 Pro"))
+}
+
+#Preview("iPad \u{2014} Completion") {
+    let (container, session) = makePreviewSession(richBikeData: true)
+    return NavigationStack {
+        WorkoutSessionDetailView(session: session, mode: .completion(onDone: {}))
     }
     .modelContainer(container)
     .previewDevice(PreviewDevice(rawValue: "iPad Pro 13-inch (M5)"))

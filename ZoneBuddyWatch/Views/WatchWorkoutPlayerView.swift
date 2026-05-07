@@ -217,24 +217,44 @@ struct WatchWorkoutPlayerView: View {
     // MARK: - Finished View
 
     private var finishedView: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 48))
-                .foregroundStyle(.green)
+        let lastZoneColor = viewModel.intervals.last?.zone?.color ?? .green
+        return VStack(spacing: 10) {
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [lastZoneColor.opacity(0.4), lastZoneColor.opacity(0.05)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 60, height: 60)
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 36, weight: .semibold))
+                    .foregroundStyle(lastZoneColor)
+                    .symbolEffect(.bounce, options: .nonRepeating)
+            }
 
-            Text("Done!")
-                .font(.title2.bold())
+            Text("Workout Complete")
+                .font(.system(.headline, design: .rounded).weight(.bold))
+                .multilineTextAlignment(.center)
 
             Text(viewModel.totalElapsedSeconds.formattedDuration)
-                .font(.system(.body, design: .monospaced))
-                .foregroundStyle(.secondary)
+                .font(.system(.title3, design: .rounded).weight(.semibold))
+                .monospacedDigit()
+                .foregroundStyle(lastZoneColor)
 
-            Button("Close") {
+            Button {
                 dismiss()
+            } label: {
+                Text("Done")
+                    .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.borderedProminent)
+            .tint(lastZoneColor)
+            .padding(.top, 4)
         }
-        .padding()
+        .padding(.horizontal, 8)
     }
 
     // MARK: - Interval Overview Page

@@ -44,6 +44,7 @@ final class WorkoutPlayerViewModel {
     private(set) var isFinished: Bool = false
     private(set) var showTransitionBanner: Bool = false
     private(set) var workoutSummary: WorkoutSummary?
+    private(set) var savedSession: WorkoutSession?
     var showTimer: Bool = true
     var audioCuesEnabled: Bool = SettingsManager.shared.audioCuesEnabled
 
@@ -1100,6 +1101,7 @@ final class WorkoutPlayerViewModel {
         }
         do {
             try context.save()
+            self.savedSession = session
         } catch {
             print("Failed to save WorkoutSession: \(error)")
         }

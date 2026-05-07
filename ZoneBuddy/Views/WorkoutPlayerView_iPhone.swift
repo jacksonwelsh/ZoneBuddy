@@ -35,24 +35,24 @@ struct WorkoutPlayerView_iPhone: View {
 
     var body: some View {
         ZStack {
-            // Background: solid zone color (no bike) or black + edge glow (bike connected)
-            if isBikeConnected {
-                Color.black.ignoresSafeArea()
-
-                EdgeGlowView(
-                    actualZone: viewModel.actualPowerZone,
-                    targetZone: viewModel.currentInterval?.zone,
-                    intensity: 1.0
-                )
-            } else {
-                viewModel.currentZoneColor
-                    .ignoresSafeArea()
-                    .animation(.easeInOut(duration: 0.5), value: viewModel.currentIntervalIndex)
-            }
-
             if viewModel.isFinished {
-                finishedOverlay
+                completionView
             } else {
+                // Background: solid zone color (no bike) or black + edge glow (bike connected)
+                if isBikeConnected {
+                    Color.black.ignoresSafeArea()
+
+                    EdgeGlowView(
+                        actualZone: viewModel.actualPowerZone,
+                        targetZone: viewModel.currentInterval?.zone,
+                        intensity: 1.0
+                    )
+                } else {
+                    viewModel.currentZoneColor
+                        .ignoresSafeArea()
+                        .animation(.easeInOut(duration: 0.5), value: viewModel.currentIntervalIndex)
+                }
+
                 TabView(selection: $selectedPage) {
                     (isLandscape ? AnyView(landscapeActiveWorkoutPage) : AnyView(activeWorkoutPage))
                         .tag(0)
@@ -481,111 +481,37 @@ struct WorkoutPlayerView_iPhone: View {
         }
     }
 
-    private var finishedOverlay: some View {
-        VStack(spacing: 30) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 80))
-                .foregroundStyle(fgColor)
-
-            Text("Workout Complete!")
-                .font(.largeTitle)
-                .fontWeight(.bold)
-                .foregroundStyle(fgColor)
-
-            Text("Total time: \(viewModel.totalElapsedSeconds.formattedDuration)")
-                .font(.title2)
-                .foregroundStyle(fgColor.opacity(0.7))
-
-            if let summary = viewModel.workoutSummary {
-                bikeSummarySection(summary)
+    @ViewBuilder
+    private var completionView: some View {
+        if let session = viewModel.savedSession {
+            NavigationStack {
+                WorkoutSessionDetailView(
+                    session: session,
+                    mode: .completion(onDone: {
+                        viewModel.endActivity()
+                        dismiss()
+                    })
+                )
             }
-
-            Button("Done") {
-                viewModel.endActivity()
-                dismiss()
-            }
-            .font(.title3)
-            .buttonStyle(.borderedProminent)
-            .tint(fgColor)
-            .foregroundStyle(isBikeConnected ? .black : viewModel.currentZoneColor)
-            .padding(.top, 20)
-        }
-    }
-
-    private func bikeSummarySection(_ summary: WorkoutSummary) -> some View {
-        VStack(spacing: 12) {
-            Divider()
-                .background(fgColor.opacity(0.3))
-
-            HStack(spacing: 24) {
-                summaryItem(value: "\(summary.avgPower)", label: "Avg Power", unit: "W")
-                summaryItem(value: summary.formattedDistance, label: "Distance", unit: summary.distanceUnit)
-            }
-
-            HStack(spacing: 24) {
-                summaryItem(value: "\(summary.totalCalories)", label: "Calories", unit: "kcal")
-                summaryItem(value: String(format: "%.0f", summary.totalOutputKJ), label: "Output", unit: "kJ")
-            }
-
-            if let avgHR = summary.avgHeartRate {
-                HStack(spacing: 24) {
-                    summaryItem(value: "\(avgHR)", label: "Avg HR", unit: "bpm")
-                }
-            }
-
-            if !summary.zoneTimeBreakdown.isEmpty {
-                Divider()
-                    .background(fgColor.opacity(0.3))
-                zoneSummarySection(summary.zoneTimeBreakdown, totalDuration: summary.duration)
-            }
-        }
-        .foregroundStyle(fgColor)
-    }
-
-    private func zoneSummarySection(_ breakdown: [PowerZone: Int], totalDuration: Int) -> some View {
-        VStack(spacing: 8) {
-            Text("Zone Breakdown")
-                .font(.caption)
-                .textCase(.uppercase)
-                .tracking(0.5)
-                .foregroundStyle(fgColor.opacity(0.6))
-
-            HStack(spacing: 4) {
-                ForEach(PowerZone.allCases) { zone in
-                    let seconds = breakdown[zone] ?? 0
-                    if seconds > 0 {
-                        let fraction = CGFloat(seconds) / CGFloat(max(totalDuration, 1))
-                        VStack(spacing: 2) {
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(zone.color)
-                                .frame(height: 24 * max(fraction * 7, 0.15))
-                            Text("Z\(zone.rawValue)")
-                                .font(.system(size: 9, weight: .medium))
-                                .foregroundStyle(fgColor.opacity(0.5))
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                }
-            }
-            .frame(height: 40)
-        }
-    }
-
-    private func summaryItem(value: String, label: String, unit: String) -> some View {
-        VStack(spacing: 2) {
-            HStack(alignment: .lastTextBaseline, spacing: 2) {
-                Text(value)
-                    .font(.title2)
-                    .fontWeight(.bold)
+        } else {
+            // Fallback: session save failed but workout is finished
+            VStack(spacing: 24) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 64))
+                    .foregroundStyle(.tint)
+                Text("Workout Complete")
+                    .font(.system(.largeTitle, design: .rounded).weight(.bold))
+                Text(viewModel.totalElapsedSeconds.formattedDuration)
+                    .font(.system(size: 40, weight: .bold, design: .rounded))
                     .monospacedDigit()
-                Text(unit)
-                    .font(.caption)
+                Button("Done") {
+                    viewModel.endActivity()
+                    dismiss()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
             }
-            Text(label)
-                .font(.caption2)
-                .textCase(.uppercase)
-                .tracking(0.5)
-                .opacity(0.7)
+            .padding()
         }
     }
 }

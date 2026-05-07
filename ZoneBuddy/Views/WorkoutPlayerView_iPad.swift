@@ -46,42 +46,42 @@ struct WorkoutPlayerView_iPad: View {
 
     var body: some View {
         ZStack {
-            // Background: solid + edge glow (bike connected) or zone-tinted gradient (no bike)
-            if isBikeConnected {
-                if colorScheme == .dark {
-                    Color.black.ignoresSafeArea()
-                } else {
-                    Color(.systemBackground).ignoresSafeArea()
-                }
-            } else {
-                if colorScheme == .dark {
-                    LinearGradient(
-                        colors: [
-                            viewModel.currentZoneColor.opacity(0.15),
-                            Color.black.opacity(0.95),
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .ignoresSafeArea()
-                    .animation(.easeInOut(duration: 0.8), value: viewModel.currentIntervalIndex)
-                } else {
-                    LinearGradient(
-                        colors: [
-                            viewModel.currentZoneColor.opacity(0.10),
-                            Color(.systemBackground),
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .ignoresSafeArea()
-                    .animation(.easeInOut(duration: 0.8), value: viewModel.currentIntervalIndex)
-                }
-            }
-
             if viewModel.isFinished {
-                finishedOverlay
+                completionView
             } else {
+                // Background: solid + edge glow (bike connected) or zone-tinted gradient (no bike)
+                if isBikeConnected {
+                    if colorScheme == .dark {
+                        Color.black.ignoresSafeArea()
+                    } else {
+                        Color(.systemBackground).ignoresSafeArea()
+                    }
+                } else {
+                    if colorScheme == .dark {
+                        LinearGradient(
+                            colors: [
+                                viewModel.currentZoneColor.opacity(0.15),
+                                Color.black.opacity(0.95),
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .ignoresSafeArea()
+                        .animation(.easeInOut(duration: 0.8), value: viewModel.currentIntervalIndex)
+                    } else {
+                        LinearGradient(
+                            colors: [
+                                viewModel.currentZoneColor.opacity(0.10),
+                                Color(.systemBackground),
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .ignoresSafeArea()
+                        .animation(.easeInOut(duration: 0.8), value: viewModel.currentIntervalIndex)
+                    }
+                }
+
                 ScrollView {
                     VStack(spacing: 16) {
                         headerRow
@@ -91,15 +91,15 @@ struct WorkoutPlayerView_iPad: View {
                     }
                     .padding(20)
                 }
-            }
 
-            // Edge glow — same as iPhone, device corner radius auto-detected
-            if isBikeConnected {
-                EdgeGlowView(
-                    actualZone: viewModel.actualPowerZone,
-                    targetZone: viewModel.currentInterval?.zone,
-                    intensity: 1.0
-                )
+                // Edge glow — same as iPhone, device corner radius auto-detected
+                if isBikeConnected {
+                    EdgeGlowView(
+                        actualZone: viewModel.actualPowerZone,
+                        targetZone: viewModel.currentInterval?.zone,
+                        intensity: 1.0
+                    )
+                }
             }
 
             // Workout remaining — top-right corner overlay
@@ -380,111 +380,36 @@ struct WorkoutPlayerView_iPad: View {
 
     // MARK: - Finished
 
-    private var finishedOverlay: some View {
-        VStack(spacing: 30) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 80))
-                .foregroundStyle(fg)
-
-            Text("Workout Complete!")
-                .font(.largeTitle)
-                .fontWeight(.bold)
-                .foregroundStyle(fg)
-
-            Text("Total time: \(viewModel.totalElapsedSeconds.formattedDuration)")
-                .font(.title2)
-                .foregroundStyle(fg.opacity(0.7))
-
-            if let summary = viewModel.workoutSummary {
-                bikeSummarySection(summary)
+    @ViewBuilder
+    private var completionView: some View {
+        if let session = viewModel.savedSession {
+            NavigationStack {
+                WorkoutSessionDetailView(
+                    session: session,
+                    mode: .completion(onDone: {
+                        viewModel.endActivity()
+                        dismiss()
+                    })
+                )
             }
-
-            Button("Done") {
-                viewModel.endActivity()
-                dismiss()
-            }
-            .font(.title3)
-            .buttonStyle(.borderedProminent)
-            .tint(fg)
-            .foregroundStyle(colorScheme == .dark ? Color.black : Color.white)
-            .padding(.top, 20)
-        }
-    }
-
-    private func bikeSummarySection(_ summary: WorkoutSummary) -> some View {
-        VStack(spacing: 12) {
-            Divider()
-                .background(fg.opacity(0.3))
-
-            HStack(spacing: 24) {
-                summaryItem(value: "\(summary.avgPower)", label: "Avg Power", unit: "W")
-                summaryItem(value: summary.formattedDistance, label: "Distance", unit: summary.distanceUnit)
-            }
-
-            HStack(spacing: 24) {
-                summaryItem(value: "\(summary.totalCalories)", label: "Calories", unit: "kcal")
-                summaryItem(value: String(format: "%.0f", summary.totalOutputKJ), label: "Output", unit: "kJ")
-            }
-
-            if let avgHR = summary.avgHeartRate {
-                HStack(spacing: 24) {
-                    summaryItem(value: "\(avgHR)", label: "Avg HR", unit: "bpm")
-                }
-            }
-
-            if !summary.zoneTimeBreakdown.isEmpty {
-                Divider()
-                    .background(fg.opacity(0.3))
-                zoneSummarySection(summary.zoneTimeBreakdown, totalDuration: summary.duration)
-            }
-        }
-        .foregroundStyle(fg)
-    }
-
-    private func zoneSummarySection(_ breakdown: [PowerZone: Int], totalDuration: Int) -> some View {
-        VStack(spacing: 8) {
-            Text("Zone Breakdown")
-                .font(.caption)
-                .textCase(.uppercase)
-                .tracking(0.5)
-                .foregroundStyle(fg.opacity(0.6))
-
-            HStack(spacing: 4) {
-                ForEach(PowerZone.allCases) { zone in
-                    let seconds = breakdown[zone] ?? 0
-                    if seconds > 0 {
-                        let fraction = CGFloat(seconds) / CGFloat(max(totalDuration, 1))
-                        VStack(spacing: 2) {
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(zone.color)
-                                .frame(height: 24 * max(fraction * 7, 0.15))
-                            Text("Z\(zone.rawValue)")
-                                .font(.system(size: 9, weight: .medium))
-                                .foregroundStyle(fg.opacity(0.5))
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                }
-            }
-            .frame(height: 40)
-        }
-    }
-
-    private func summaryItem(value: String, label: String, unit: String) -> some View {
-        VStack(spacing: 2) {
-            HStack(alignment: .lastTextBaseline, spacing: 2) {
-                Text(value)
-                    .font(.title2)
-                    .fontWeight(.bold)
+        } else {
+            VStack(spacing: 24) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 80))
+                    .foregroundStyle(.tint)
+                Text("Workout Complete")
+                    .font(.system(.largeTitle, design: .rounded).weight(.bold))
+                Text(viewModel.totalElapsedSeconds.formattedDuration)
+                    .font(.system(size: 48, weight: .bold, design: .rounded))
                     .monospacedDigit()
-                Text(unit)
-                    .font(.caption)
+                Button("Done") {
+                    viewModel.endActivity()
+                    dismiss()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
             }
-            Text(label)
-                .font(.caption2)
-                .textCase(.uppercase)
-                .tracking(0.5)
-                .opacity(0.7)
+            .padding()
         }
     }
 }
