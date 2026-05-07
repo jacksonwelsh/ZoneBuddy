@@ -850,6 +850,9 @@ final class WorkoutPlayerViewModel {
         if hasBike {
             allBikeSamples = []
         }
+        allHRSamples = []
+        watchHRBuffer = []
+        lastBufferedHR = nil
 
         // Always start HR streaming immediately — BLE-based streamers (iPad)
         // don't need HealthKit and must not wait for authorization.
@@ -965,16 +968,16 @@ final class WorkoutPlayerViewModel {
             integrateSpeedSamples(remaining)
         }
 
-        // Drain remaining Watch HR buffer
+        // Drain remaining Watch HR buffer (still needed for HealthKit sample writing)
         let finalHRSamples = watchHRBuffer
         watchHRBuffer.removeAll()
 
         // Compute summary
         let powers = allBikeSamples.compactMap(\.power)
-        let bikeHeartRates = allBikeSamples.compactMap(\.heartRate)
-        let watchHeartRates = finalHRSamples.map(\.bpm)
-        // Prefer Watch HR for summary; fall back to bike HR
-        let heartRates = watchHeartRates.isEmpty ? bikeHeartRates : watchHeartRates
+        // Use the per-tick running HR list (never drained) for summary.
+        // Bike HR fallback filters out 0 (means no HR sensor paired with bike).
+        let bikeHeartRates = allBikeSamples.compactMap(\.heartRate).filter { $0 > 0 }
+        let heartRates = allHRSamples.isEmpty ? bikeHeartRates : allHRSamples
 
         // Compute total output (kJ) from power samples: Σ(watts × dt) / 1000
         var totalJoules: Double = 0

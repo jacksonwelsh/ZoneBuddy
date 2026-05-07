@@ -145,6 +145,9 @@ struct WorkoutPlayerView: View {
         .onChange(of: WorkoutConnectivityManager.shared.watchEndedWorkout) { _, ended in
             if ended {
                 WorkoutConnectivityManager.shared.resetWatchEndedWorkout()
+                // If we already completed naturally, keep the completion view visible
+                // for the user to dismiss manually.
+                guard !viewModel.isFinished else { return }
                 viewModel.pause()
                 viewModel.endActivity()
                 dismiss()
@@ -177,6 +180,7 @@ struct WorkoutPlayerView: View {
         .onChange(of: BLEHeartRateScanner.shared.watchEndedWorkout) { _, ended in
             if ended {
                 BLEHeartRateScanner.shared.resetWatchEndedWorkout()
+                guard !viewModel.isFinished else { return }
                 viewModel.pause()
                 viewModel.endActivity()
                 dismiss()
