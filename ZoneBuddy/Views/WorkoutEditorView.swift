@@ -135,6 +135,7 @@ struct WorkoutEditorView: View {
             WorkoutPlayerView(
                 intervals: viewModel.intervals,
                 workoutName: viewModel.workoutName,
+                templateID: viewModel.workout.id,
                 transitionWarningDuration: viewModel.transitionWarningDuration,
                 playlistID: viewModel.playlistID,
                 playlistKind: viewModel.playlistKind,

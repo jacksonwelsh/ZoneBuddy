@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 #if os(iOS)
 import FTMSKit
 #endif
@@ -217,6 +218,7 @@ final class WorkoutPlayerViewModel {
     private let speechCueProvider: SpeechCueProviding?
     let musicPlaybackManager: MusicPlaybackManaging?
     let workoutName: String
+    let templateID: UUID?
     let transitionWarningDuration: Int
     private let spokenDurationSecondsThreshold: Int = 90
     private let dateProvider: @Sendable () -> Date
@@ -235,6 +237,8 @@ final class WorkoutPlayerViewModel {
     private var allHRSamples: [Int] = []
     private var lastBufferedHR: Int?
     private var zoneTimeAccumulator: [PowerZone: Int] = [:]
+    private(set) var onTargetZoneAccumulator: [PowerZone: Int] = [:]
+    private(set) var hrZoneTimeAccumulator: [HeartRateZone: Int] = [:]
     private var lastZoneTickIndex: Int = -1
     /// Running distance in meters, computed by integrating speed over time from bike samples.
     private(set) var computedDistanceMeters: Double = 0
@@ -267,6 +271,7 @@ final class WorkoutPlayerViewModel {
         activityManager: ActivityManaging? = nil,
         speechCueProvider: SpeechCueProviding? = nil,
         workoutName: String = "",
+        templateID: UUID? = nil,
         transitionWarningDuration: Int = 10,
         dateProvider: @escaping @Sendable () -> Date = { Date() },
         musicPlaybackManager: MusicPlaybackManaging? = nil,
@@ -285,6 +290,7 @@ final class WorkoutPlayerViewModel {
         self.speechCueProvider = speechCueProvider
         self.musicPlaybackManager = musicPlaybackManager
         self.workoutName = workoutName
+        self.templateID = templateID
         self.transitionWarningDuration = transitionWarningDuration
         self.dateProvider = dateProvider
         self.playlistID = playlistID
@@ -380,8 +386,23 @@ final class WorkoutPlayerViewModel {
                 }
 
                 // Track time spent in each zone (1 second per tick)
-                if let zone = self.currentInterval?.zone {
+                let targetZone = self.currentInterval?.zone
+                if let zone = targetZone {
                     self.zoneTimeAccumulator[zone, default: 0] += 1
+                }
+
+                // On-target adherence: actual power zone matches prescribed target
+                if let target = targetZone,
+                   let actual = self.actualPowerZone,
+                   actual == target {
+                    self.onTargetZoneAccumulator[target, default: 0] += 1
+                }
+
+                // Heart rate zone time (actual)
+                let maxHR = SettingsManager.shared.maxHeartRate
+                if let bpm = self.currentHeartRate, maxHR > 0,
+                   let hrZone = HeartRateZone.zone(forBPM: bpm, maxHR: maxHR) {
+                    self.hrZoneTimeAccumulator[hrZone, default: 0] += 1
                 }
 
                 // Buffer Watch HR for HealthKit writing (iOS only)
@@ -970,16 +991,30 @@ final class WorkoutPlayerViewModel {
         let cyclingEfficiency = 0.25
         let computedCalories = Int(totalJoules / (cyclingEfficiency * 4184.0))
 
+        let summaryAvgPower = powers.isEmpty ? 0 : powers.reduce(0, +) / powers.count
+        let summaryMaxPower = powers.max() ?? 0
+        let summaryAvgHR = heartRates.isEmpty ? nil : heartRates.reduce(0, +) / heartRates.count
+        let summaryMaxHR = heartRates.max()
+
         workoutSummary = WorkoutSummary(
-            avgPower: powers.isEmpty ? 0 : powers.reduce(0, +) / powers.count,
-            maxPower: powers.max() ?? 0,
+            avgPower: summaryAvgPower,
+            maxPower: summaryMaxPower,
             totalDistance: computedDistanceMeters,
             totalCalories: computedCalories,
             totalOutputKJ: totalOutputKJ,
-            avgHeartRate: heartRates.isEmpty ? nil : heartRates.reduce(0, +) / heartRates.count,
-            maxHeartRate: heartRates.max(),
+            avgHeartRate: summaryAvgHR,
+            maxHeartRate: summaryMaxHR,
             duration: totalElapsedSeconds,
             zoneTimeBreakdown: zoneTimeAccumulator
+        )
+
+        persistWorkoutSession(
+            avgPower: summaryAvgPower,
+            maxPower: summaryMaxPower,
+            totalOutputKJ: totalOutputKJ,
+            computedCalories: computedCalories,
+            avgHeartRate: summaryAvgHR,
+            maxHeartRate: summaryMaxHR
         )
 
         let endDate = dateProvider()
@@ -1018,4 +1053,56 @@ final class WorkoutPlayerViewModel {
         }
         #endif
     }
+
+    #if !os(watchOS)
+    private func persistWorkoutSession(
+        avgPower: Int,
+        maxPower: Int,
+        totalOutputKJ: Double,
+        computedCalories: Int,
+        avgHeartRate: Int?,
+        maxHeartRate: Int?
+    ) {
+        let session = WorkoutSession(
+            templateID: templateID,
+            name: workoutName,
+            transitionWarningDuration: transitionWarningDuration,
+            completedAt: dateProvider(),
+            totalDuration: totalElapsedSeconds,
+            avgPower: avgPower > 0 ? avgPower : nil,
+            maxPower: maxPower > 0 ? maxPower : nil,
+            totalOutputKJ: totalOutputKJ > 0 ? totalOutputKJ : nil,
+            totalDistance: computedDistanceMeters > 0 ? computedDistanceMeters : nil,
+            totalCalories: computedCalories > 0 ? computedCalories : nil,
+            avgHeartRate: avgHeartRate,
+            maxHeartRate: maxHeartRate,
+            onTargetZoneSeconds: onTargetZoneAccumulator,
+            scheduledZoneSeconds: zoneTimeAccumulator,
+            hrZoneSeconds: hrZoneTimeAccumulator,
+            ftpAtTime: SettingsManager.shared.functionalThresholdPower,
+            maxHRAtTime: SettingsManager.shared.maxHeartRate,
+            bikeWasConnected: isConnectedToBike
+        )
+
+        let snapshots = intervals.enumerated().map { index, interval in
+            SessionInterval(
+                zone: interval.zone,
+                duration: interval.duration,
+                sortOrder: index
+            )
+        }
+        session.intervals = snapshots
+
+        let context = DataStore.shared.context
+        context.insert(session)
+        for snapshot in snapshots {
+            context.insert(snapshot)
+        }
+        do {
+            try context.save()
+        } catch {
+            print("Failed to save WorkoutSession: \(error)")
+        }
+    }
+    #endif
 }

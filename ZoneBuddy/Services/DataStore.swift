@@ -12,6 +12,8 @@ final class DataStore {
         let schema = Schema([
             Workout.self,
             Interval.self,
+            WorkoutSession.self,
+            SessionInterval.self,
         ])
         let modelConfiguration = ModelConfiguration(
             schema: schema,
@@ -35,5 +37,10 @@ final class DataStore {
     func fetchWorkout(id: UUID) -> Workout? {
         let descriptor = FetchDescriptor<Workout>(predicate: #Predicate { $0.id == id })
         return (try? context.fetch(descriptor))?.first
+    }
+
+    func fetchSessions() -> [WorkoutSession] {
+        let descriptor = FetchDescriptor<WorkoutSession>(sortBy: [SortDescriptor(\.completedAt, order: .reverse)])
+        return (try? context.fetch(descriptor)) ?? []
     }
 }

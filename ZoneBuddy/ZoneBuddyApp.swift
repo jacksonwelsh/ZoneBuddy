@@ -20,11 +20,21 @@ struct ZoneBuddyApp: App {
 
     var body: some Scene {
         WindowGroup {
-            WorkoutLibraryView(pendingImport: $pendingImport)
-                .onOpenURL { url in
-                    guard let data = try? WorkoutCoder.decode(url) else { return }
-                    pendingImport = data
+            TabView {
+                Tab("Workouts", systemImage: "figure.indoor.cycle") {
+                    WorkoutLibraryView(pendingImport: $pendingImport)
                 }
+                Tab("History", systemImage: "clock.arrow.circlepath") {
+                    WorkoutHistoryView()
+                }
+                Tab("Settings", systemImage: "gearshape") {
+                    SettingsView()
+                }
+            }
+            .onOpenURL { url in
+                guard let data = try? WorkoutCoder.decode(url) else { return }
+                pendingImport = data
+            }
         }
         .modelContainer(DataStore.shared.container)
     }

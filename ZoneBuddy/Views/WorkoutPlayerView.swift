@@ -16,6 +16,7 @@ struct WorkoutPlayerView: View {
     init(
         intervals: [Interval],
         workoutName: String,
+        templateID: UUID? = nil,
         transitionWarningDuration: Int = 10,
         playlistID: String? = nil,
         playlistKind: String? = nil,
@@ -38,6 +39,7 @@ struct WorkoutPlayerView: View {
             timerProvider: LiveTimerProvider(),
             speechCueProvider: LiveSpeechCueProvider.shared,
             workoutName: workoutName,
+            templateID: templateID,
             transitionWarningDuration: transitionWarningDuration,
             musicPlaybackManager: musicManager,
             playlistID: playlistID,

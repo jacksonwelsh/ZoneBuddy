@@ -7,7 +7,6 @@ struct WorkoutLibraryView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Workout.sortOrder) private var workouts: [Workout]
     @State private var navigateToNewWorkout: Workout?
-    @State private var showSettings = false
     @State private var showGenerateSheet = false
     @State private var navigationPath = NavigationPath()
     @Binding var pendingImport: WorkoutTransferData?
@@ -71,14 +70,6 @@ struct WorkoutLibraryView: View {
                 WorkoutEditorView(workout: workout, isNew: true)
             }
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        showSettings = true
-                    } label: {
-                        Label("Settings", systemImage: "gearshape")
-                    }
-                }
-
                 ToolbarItem(placement: .primaryAction) {
                     if WorkoutGenerationService.isAvailable {
                         Menu {
@@ -106,9 +97,6 @@ struct WorkoutLibraryView: View {
             }
             .navigationDestination(for: PlayerDestination.self) { _ in
                 playerDestination()
-            }
-            .sheet(isPresented: $showSettings) {
-                SettingsView()
             }
             .sheet(item: $pendingImport) { data in
                 WorkoutImportView(workoutData: data)
@@ -141,6 +129,7 @@ struct WorkoutLibraryView: View {
             WorkoutPlayerView(
                 intervals: workout.sortedIntervals,
                 workoutName: workout.name,
+                templateID: workout.id,
                 transitionWarningDuration: workout.transitionWarningDuration
             )
         } else {
