@@ -114,7 +114,9 @@ struct WorkoutEditorView: View {
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     let bikeManager = LiveBikeConnectionManager.shared
-                    if SettingsManager.shared.promptForBikeBeforeWorkout && !bikeManager.isConnected {
+                    let promptEnabled = SettingsManager.shared.promptForBikeBeforeWorkout
+                    let bikeReady = bikeManager.isConnected && bikeManager.hasReceivedNonZeroMetric
+                    if promptEnabled && !bikeReady {
                         showingBikePrompt = true
                     } else {
                         navigateToPlayer = true

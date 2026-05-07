@@ -429,12 +429,15 @@ private final class PreviewBikeManager: BikeConnecting {
     var discoveredDevices: [FTMSDiscoveredDevice] = []
     var isScanning: Bool = false
     var accumulatedSamples: [BikeDataSample] = []
+    var hasReceivedNonZeroMetric: Bool = true
+    var isReconnecting: Bool = false
     func startScanning() {}
     func stopScanning() {}
     func connect(to device: FTMSDiscoveredDevice) {}
     func disconnect() {}
     func drainSamples() -> [BikeDataSample] { [] }
     func autoConnect(timeout: TimeInterval) {}
+    func attemptReconnect() {}
 }
 
 private final class PreviewHeartRateStreamer: HeartRateStreaming {
