@@ -204,7 +204,7 @@ struct SessionShareCardView: View {
     private var background: some View {
         let zoneColor = dominantZoneColor
         return LinearGradient(
-            colors: [zoneColor.opacity(0.18), zoneColor.opacity(0.04)],
+            colors: [zoneColor.opacity(0.32), zoneColor.opacity(0.08)],
             startPoint: .top,
             endPoint: .bottom
         )
@@ -402,10 +402,7 @@ private struct MetricCardLarge: View {
         }
         .frame(maxWidth: .infinity, minHeight: 150, alignment: .leading)
         .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color(uiColor: .secondarySystemBackground))
-        )
+        .glassyCard(cornerRadius: 20)
     }
 }
 
@@ -431,10 +428,41 @@ private struct MetricCardCompact: View {
         .frame(maxWidth: .infinity, minHeight: 100, alignment: .leading)
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color(uiColor: .secondarySystemBackground))
-        )
+        .glassyCard(cornerRadius: 18)
+    }
+}
+
+// MARK: - Glassy card surface
+
+/// Translucent card surface designed to render predictably through `ImageRenderer`
+/// (which does not honor `.glassEffect` or live `.material` blur). The fill uses an
+/// explicit opacity so the underlying gradient bleeds through, and a soft top
+/// highlight + 1pt hairline stroke give the surface enough definition to read as glass.
+private extension View {
+    func glassyCard(cornerRadius: CGFloat) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        return self
+            .background {
+                shape
+                    .fill(Color(uiColor: .secondarySystemBackground).opacity(0.55))
+            }
+            .overlay {
+                shape
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.18), Color.white.opacity(0)],
+                            startPoint: .top,
+                            endPoint: .center
+                        )
+                    )
+                    .blendMode(.plusLighter)
+                    .allowsHitTesting(false)
+            }
+            .overlay {
+                shape
+                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+            }
+            .clipShape(shape)
     }
 }
 
