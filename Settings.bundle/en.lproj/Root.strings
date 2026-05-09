@@ -1,0 +1,5 @@
+/* English localization for the ZoneBuddy iOS Settings.app pane. */
+
+"Onboarding" = "Onboarding";
+"Re-run Onboarding" = "Re-run Onboarding";
+"Turn this on, then re-launch ZoneBuddy to see the welcome flow again. The toggle resets itself once onboarding is shown." = "Turn this on, then re-launch ZoneBuddy to see the welcome flow again. The toggle resets itself once onboarding is shown.";

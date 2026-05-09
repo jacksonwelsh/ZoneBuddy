@@ -38,7 +38,13 @@ final class LiveBikeConnectionManager: BikeConnecting {
     private(set) var hasReceivedNonZeroMetric: Bool = false
     private(set) var isReconnecting: Bool = false
 
-    private let ftms = FTMSKit()
+    /// Lazy so that simply accessing `LiveBikeConnectionManager.shared` (via default-arg
+    /// evaluation in views, etc.) does not instantiate `FTMSKit` and trigger the iOS
+    /// Bluetooth permission prompt. The prompt only fires when the user reaches the
+    /// onboarding Bluetooth step, taps Connect in Settings, or auto-connect runs.
+    /// `@ObservationIgnored` keeps the @Observable macro from wrapping a `lazy var`,
+    /// which it cannot handle.
+    @ObservationIgnored private lazy var ftms = FTMSKit()
     private var connectedBike: FTMSBike?
     private var scanTask: Task<Void, Never>?
     private var dataStreamTask: Task<Void, Never>?

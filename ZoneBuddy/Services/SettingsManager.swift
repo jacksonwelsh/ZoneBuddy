@@ -99,6 +99,15 @@ final class SettingsManager {
         }
     }
 
+    /// True once the user has completed the first-launch onboarding flow.
+    /// Backed by iCloud KV store so reinstalling the app on the same Apple ID does not replay onboarding.
+    var hasCompletedOnboarding: Bool {
+        didSet {
+            store.set(hasCompletedOnboarding, forKey: Keys.hasCompletedOnboarding)
+            store.synchronize()
+        }
+    }
+
     private enum Keys {
         static let transitionWarningDuration = "transitionWarningDuration"
         static let audioCuesEnabled = "audioCuesEnabled"
@@ -109,6 +118,10 @@ final class SettingsManager {
         static let lastConnectedBikeID = "lastConnectedBikeID"
         static let lastConnectedBikeName = "lastConnectedBikeName"
         static let promptForBikeBeforeWorkout = "promptForBikeBeforeWorkout"
+        static let hasCompletedOnboarding = "hasCompletedOnboarding"
+        /// UserDefaults.standard key written by the iOS Settings.app toggle (Settings.bundle).
+        /// Read on launch + foreground; if true, we clear `hasCompletedOnboarding` and reset this back to false.
+        static let rerunOnboarding = "rerun_onboarding"
     }
 
     private init() {
@@ -148,6 +161,12 @@ final class SettingsManager {
             self.promptForBikeBeforeWorkout = false
         } else {
             self.promptForBikeBeforeWorkout = store.bool(forKey: Keys.promptForBikeBeforeWorkout)
+        }
+
+        if store.object(forKey: Keys.hasCompletedOnboarding) == nil {
+            self.hasCompletedOnboarding = false
+        } else {
+            self.hasCompletedOnboarding = store.bool(forKey: Keys.hasCompletedOnboarding)
         }
 
         NotificationCenter.default.addObserver(
@@ -191,6 +210,21 @@ final class SettingsManager {
 
         if store.object(forKey: Keys.promptForBikeBeforeWorkout) != nil {
             promptForBikeBeforeWorkout = store.bool(forKey: Keys.promptForBikeBeforeWorkout)
+        }
+
+        if store.object(forKey: Keys.hasCompletedOnboarding) != nil {
+            hasCompletedOnboarding = store.bool(forKey: Keys.hasCompletedOnboarding)
+        }
+    }
+
+    /// Reads the `rerun_onboarding` toggle written by the iOS Settings.app (via Settings.bundle).
+    /// If set, clears `hasCompletedOnboarding` so the next launch replays onboarding, then resets
+    /// the toggle back to false so it's a one-shot. Call on app launch and on foreground.
+    func consumeRerunFlagIfSet() {
+        UserDefaults.standard.register(defaults: [Keys.rerunOnboarding: false])
+        if UserDefaults.standard.bool(forKey: Keys.rerunOnboarding) {
+            hasCompletedOnboarding = false
+            UserDefaults.standard.set(false, forKey: Keys.rerunOnboarding)
         }
     }
 }

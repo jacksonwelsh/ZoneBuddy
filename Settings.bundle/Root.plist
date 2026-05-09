@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>StringsTable</key>
+    <string>Root</string>
+    <key>PreferenceSpecifiers</key>
+    <array>
+        <dict>
+            <key>Type</key>
+            <string>PSGroupSpecifier</string>
+            <key>Title</key>
+            <string>Onboarding</string>
+            <key>FooterText</key>
+            <string>Turn this on, then re-launch ZoneBuddy to see the welcome flow again. The toggle resets itself once onboarding is shown.</string>
+        </dict>
+        <dict>
+            <key>Type</key>
+            <string>PSToggleSwitchSpecifier</string>
+            <key>Title</key>
+            <string>Re-run Onboarding</string>
+            <key>Key</key>
+            <string>rerun_onboarding</string>
+            <key>DefaultValue</key>
+            <false/>
+            <key>TrueValue</key>
+            <true/>
+            <key>FalseValue</key>
+            <false/>
+        </dict>
+    </array>
+</dict>
+</plist>
