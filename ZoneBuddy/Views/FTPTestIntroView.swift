@@ -35,13 +35,14 @@ struct FTPTestIntroView: View {
             } label: {
                 Text("Begin Test")
                     .font(.headline)
+                    .foregroundStyle(.tint)
                     .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .capsule)
             .padding(.horizontal, 20)
-            .padding(.vertical, 12)
-            .background(.bar)
+            .padding(.bottom, 8)
         }
         .sheet(isPresented: $showingBikePrompt) {
             BikePromptSheet(

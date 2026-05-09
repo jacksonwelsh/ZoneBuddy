@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @Environment(\.dismiss) private var dismiss
     @Bindable var settings = SettingsManager.shared
     var bikeManager: BikeConnecting = LiveBikeConnectionManager.shared
     @State private var ftpText: String = ""
@@ -107,14 +106,6 @@ struct SettingsView: View {
             .listStyle(.insetGrouped)
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                    .fontWeight(.semibold)
-                }
-            }
             .background(Color(.systemGroupedBackground))
             .scrollContentBackground(.visible)
             .preferredColorScheme(.dark)

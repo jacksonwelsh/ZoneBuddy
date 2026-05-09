@@ -49,6 +49,9 @@ struct WorkoutSessionDetailView: View {
         .navigationTitle(isCompletion ? "" : (session.name.isEmpty ? "Workout" : session.name))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                ShareSessionButton(session: session)
+            }
             if !isCompletion {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(role: .destructive) {
