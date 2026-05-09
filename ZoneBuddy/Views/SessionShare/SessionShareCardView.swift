@@ -12,29 +12,32 @@ enum ShareCardComponent: String, CaseIterable, Identifiable, Codable {
     case calories
     case distance
     case avgPower
-    case maxPower
+    case totalOutput
+    case zoneAdherence
 
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
-        case .avgHR:    return "Avg Heart Rate"
-        case .maxHR:    return "Max Heart Rate"
-        case .calories: return "Calories"
-        case .distance: return "Distance"
-        case .avgPower: return "Avg Power"
-        case .maxPower: return "Max Power"
+        case .avgHR:         return "Avg Heart Rate"
+        case .maxHR:         return "Max Heart Rate"
+        case .calories:      return "Calories"
+        case .distance:      return "Distance"
+        case .avgPower:      return "Avg Power"
+        case .totalOutput:   return "Total Output"
+        case .zoneAdherence: return "Zone Adherence"
         }
     }
 
     var shortLabel: String {
         switch self {
-        case .avgHR:    return "AVG HR"
-        case .maxHR:    return "MAX HR"
-        case .calories: return "CALORIES"
-        case .distance: return "DISTANCE"
-        case .avgPower: return "AVG POWER"
-        case .maxPower: return "MAX POWER"
+        case .avgHR:         return "AVG HR"
+        case .maxHR:         return "MAX HR"
+        case .calories:      return "CALORIES"
+        case .distance:      return "DISTANCE"
+        case .avgPower:      return "AVG POWER"
+        case .totalOutput:   return "TOTAL OUTPUT"
+        case .zoneAdherence: return "ON TARGET"
         }
     }
 }
@@ -64,7 +67,7 @@ enum ShareCardColorScheme: String, CaseIterable, Identifiable, Codable {
 
 /// Display configuration for `SessionShareCardView`. Persisted to UserDefaults so preferences
 /// survive across share sessions.
-struct SessionShareCardConfiguration: Codable, Equatable {
+struct SessionShareCardConfiguration: Equatable {
     /// Ordered list of every component with its enabled state.
     /// Index in this array drives tier: first 3 *enabled* items render as T1 large cards,
     /// remaining enabled items render as T2 compact cards.
@@ -91,8 +94,9 @@ struct SessionShareCardConfiguration: Codable, Equatable {
         componentSettings.compactMap { $0.isEnabled ? $0.component : nil }
     }
 
-    /// Heals a decoded value: ensures every `ShareCardComponent` case is present (handles
-    /// schema additions in future versions) without losing the user's existing order.
+    /// Heals a decoded value: drops duplicates and appends any newly-introduced
+    /// `ShareCardComponent` cases (enabled by default) so schema additions/removals
+    /// never lose the user's existing order.
     func canonicalized() -> SessionShareCardConfiguration {
         var seen = Set<ShareCardComponent>()
         var settings: [ComponentSetting] = []
@@ -106,6 +110,38 @@ struct SessionShareCardConfiguration: Codable, Equatable {
         var copy = self
         copy.componentSettings = settings
         return copy
+    }
+}
+
+extension SessionShareCardConfiguration: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case componentSettings, colorScheme, showZoneBar, showBranding
+    }
+
+    /// Wrapper that swallows decode failures so unknown component rawValues
+    /// (e.g. removed `.maxPower`) drop out cleanly instead of failing the whole config.
+    private struct TolerantDecode<T: Decodable>: Decodable {
+        let value: T?
+        init(from decoder: Decoder) throws {
+            self.value = try? T(from: decoder)
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let wrappers = (try? container.decode([TolerantDecode<ComponentSetting>].self, forKey: .componentSettings)) ?? []
+        self.componentSettings = wrappers.compactMap(\.value)
+        self.colorScheme = (try? container.decode(ShareCardColorScheme.self, forKey: .colorScheme)) ?? .light
+        self.showZoneBar = (try? container.decode(Bool.self, forKey: .showZoneBar)) ?? true
+        self.showBranding = (try? container.decode(Bool.self, forKey: .showBranding)) ?? true
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(componentSettings, forKey: .componentSettings)
+        try container.encode(colorScheme, forKey: .colorScheme)
+        try container.encode(showZoneBar, forKey: .showZoneBar)
+        try container.encode(showBranding, forKey: .showBranding)
     }
 }
 
@@ -227,14 +263,25 @@ struct SessionShareCardView: View {
 
     @ViewBuilder
     private var compactRow: some View {
-        if compactItems.count <= 3 {
+        switch compactItems.count {
+        case 0:
+            EmptyView()
+        case 1...3:
             HStack(spacing: 16) {
                 ForEach(compactItems) { item in
                     MetricCardCompact(item: item)
                 }
             }
-        } else {
-            // 4–6 compact items: 3-column grid
+        case 4:
+            // 2x2 grid keeps cards roomy when there are exactly four
+            let columns = Array(repeating: GridItem(.flexible(), spacing: 16), count: 2)
+            LazyVGrid(columns: columns, spacing: 16) {
+                ForEach(compactItems) { item in
+                    MetricCardCompact(item: item)
+                }
+            }
+        default:
+            // 5–6: 3-column grid
             let columns = Array(repeating: GridItem(.flexible(), spacing: 16), count: 3)
             LazyVGrid(columns: columns, spacing: 16) {
                 ForEach(compactItems) { item in
@@ -265,9 +312,15 @@ struct SessionShareCardView: View {
         case .avgPower:
             guard let v = session.avgPower else { return nil }
             return MetricItem(component: component, label: component.shortLabel, value: "\(v)", unit: "W", icon: nil, accent: nil)
-        case .maxPower:
-            guard let v = session.maxPower else { return nil }
-            return MetricItem(component: component, label: component.shortLabel, value: "\(v)", unit: "W", icon: nil, accent: nil)
+        case .totalOutput:
+            guard let kj = session.totalOutputKJ, kj > 0 else { return nil }
+            return MetricItem(component: component, label: component.shortLabel, value: String(format: "%.0f", kj), unit: "kJ", icon: nil, accent: nil)
+        case .zoneAdherence:
+            let scheduled = session.scheduledSecondsByZone.values.reduce(0, +)
+            let onTarget = session.onTargetSecondsByZone.values.reduce(0, +)
+            guard scheduled > 0 else { return nil }
+            let percent = Int((Double(onTarget) / Double(scheduled) * 100).rounded())
+            return MetricItem(component: component, label: component.shortLabel, value: "\(percent)", unit: "%", icon: "target", accent: .green)
         }
     }
 
