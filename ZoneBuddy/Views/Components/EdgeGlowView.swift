@@ -26,10 +26,7 @@ struct EdgeGlowView: View {
         isOnTarget ? 80 : 40
     }
 
-    /// The actual display corner radius for the current device.
-    private var deviceCornerRadius: CGFloat {
-        (UIScreen.main.value(forKey: "displayCornerRadius") as? CGFloat) ?? 55
-    }
+    private var deviceCornerRadius: CGFloat { DeviceShape.screenCornerRadius }
 
     var body: some View {
         let cr = deviceCornerRadius
@@ -60,6 +57,7 @@ struct EdgeGlowView: View {
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)
+        .accessibilityHidden(true)
         .animation(.easeInOut(duration: 0.6), value: actualZone)
         .animation(.easeInOut(duration: 0.3), value: isOnTarget)
     }

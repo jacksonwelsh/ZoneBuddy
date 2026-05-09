@@ -35,6 +35,7 @@ struct WatchEdgeGlowView: View {
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)
+        .accessibilityHidden(true)
         .animation(.easeInOut(duration: 0.6), value: zoneColor)
     }
 }

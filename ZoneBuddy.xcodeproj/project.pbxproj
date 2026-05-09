@@ -8,12 +8,12 @@
 
 /* Begin PBXBuildFile section */
 		5A5A0000000000000000000F /* ZoneBuddyWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 5A5A00000000000000000002 /* ZoneBuddyWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		64FFFF020000000000000002 /* Settings.bundle in Resources */ = {isa = PBXBuildFile; fileRef = 64FFFF010000000000000001 /* Settings.bundle */; };
 		640000012F50000000000001 /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 640000002F50000000000001 /* HealthKit.framework */; settings = {ATTRIBUTES = (Weak, ); }; };
 		643634F62F60EC1E00C17361 /* FTMSKit in Frameworks */ = {isa = PBXBuildFile; productRef = 640000112F50000000000011 /* FTMSKit */; };
 		647174942F41566300CD86C8 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 647174932F41566300CD86C8 /* WidgetKit.framework */; };
 		647174962F41566300CD86C8 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 647174952F41566300CD86C8 /* SwiftUI.framework */; };
 		647174A52F41566400CD86C8 /* ZoneBuddyLiveActivityExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 647174912F41566300CD86C8 /* ZoneBuddyLiveActivityExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		64FFFF020000000000000002 /* Settings.bundle in Resources */ = {isa = PBXBuildFile; fileRef = 64FFFF010000000000000001 /* Settings.bundle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -73,7 +73,6 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		64FFFF010000000000000001 /* Settings.bundle */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.plug-in"; path = Settings.bundle; sourceTree = "<group>"; };
 		5A5A00000000000000000002 /* ZoneBuddyWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ZoneBuddyWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		640000002F50000000000001 /* HealthKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = HealthKit.framework; path = System/Library/Frameworks/HealthKit.framework; sourceTree = SDKROOT; };
 		647174912F41566300CD86C8 /* ZoneBuddyLiveActivityExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ZoneBuddyLiveActivityExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -82,6 +81,7 @@
 		64D3B0732F4039A800D06A68 /* ZoneBuddy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ZoneBuddy.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		64D3B0842F4039AA00D06A68 /* ZoneBuddyTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ZoneBuddyTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		64D3B08E2F4039AA00D06A68 /* ZoneBuddyUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ZoneBuddyUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		64FFFF010000000000000001 /* Settings.bundle */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.plug-in"; path = Settings.bundle; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
