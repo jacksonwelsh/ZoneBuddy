@@ -434,35 +434,17 @@ private struct MetricCardCompact: View {
 
 // MARK: - Glassy card surface
 
-/// Translucent card surface designed to render predictably through `ImageRenderer`
-/// (which does not honor `.glassEffect` or live `.material` blur). The fill uses an
-/// explicit opacity so the underlying gradient bleeds through, and a soft top
-/// highlight + 1pt hairline stroke give the surface enough definition to read as glass.
+/// Translucent frosted-glass card. Uses `.ultraThinMaterial` for the live-UI blur and
+/// renders as a translucent tint through `ImageRenderer`, letting the page gradient
+/// show through. A 1.5pt adaptive stroke gives each card a soft but defined edge.
 private extension View {
     func glassyCard(cornerRadius: CGFloat) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         return self
-            .background {
-                shape
-                    .fill(Color(uiColor: .secondarySystemBackground).opacity(0.55))
-            }
+            .background(.ultraThinMaterial, in: shape)
             .overlay {
-                shape
-                    .fill(
-                        LinearGradient(
-                            colors: [Color.white.opacity(0.18), Color.white.opacity(0)],
-                            startPoint: .top,
-                            endPoint: .center
-                        )
-                    )
-                    .blendMode(.plusLighter)
-                    .allowsHitTesting(false)
+                shape.stroke(Color.primary.opacity(0.18), lineWidth: 1.5)
             }
-            .overlay {
-                shape
-                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-            }
-            .clipShape(shape)
     }
 }
 
