@@ -1,18 +1,28 @@
 import SwiftUI
 import SwiftData
 
-enum WatchPlayerDestination: Hashable {
+enum WatchPlayerDestination: Hashable, Identifiable {
     case workout(Workout)
     case remote
+
+    var id: String {
+        switch self {
+        case .workout(let workout): return "workout-\(workout.persistentModelID.hashValue)"
+        case .remote: return "remote"
+        }
+    }
 }
 
 struct WatchWorkoutLibraryView: View {
     @Query(sort: \Workout.sortOrder) private var workouts: [Workout]
-    @State private var navigationPath = NavigationPath()
+    // Presenting the player as a full-screen cover (rather than a nav-stack
+    // push) is what lets watchOS hide the system time-of-day clock during the
+    // workout: the OS only suppresses the clock in modal contexts.
+    @State private var presentation: WatchPlayerDestination?
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        NavigationStack(path: $navigationPath) {
+        NavigationStack {
             Group {
                 if workouts.isEmpty {
                     ContentUnavailableView(
@@ -23,34 +33,35 @@ struct WatchWorkoutLibraryView: View {
                 } else {
                     List {
                         ForEach(workouts) { workout in
-                            NavigationLink(value: WatchPlayerDestination.workout(workout)) {
+                            Button {
+                                presentation = .workout(workout)
+                            } label: {
                                 WorkoutListRowView(workout: workout)
                             }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
             }
             .navigationTitle("Zone Buddy")
-            .navigationDestination(for: WatchPlayerDestination.self) { destination in
-                switch destination {
-                case .workout(let workout):
-                    WatchWorkoutPlayerView(workout: workout)
-                case .remote:
-                    if let transferData = WatchNavigationManager.shared.pendingWorkout {
-                        WatchWorkoutPlayerView(transferData: transferData)
-                    }
+        }
+        .fullScreenCover(item: $presentation) { destination in
+            switch destination {
+            case .workout(let workout):
+                WatchWorkoutPlayerView(workout: workout)
+            case .remote:
+                if let transferData = WatchNavigationManager.shared.pendingWorkout {
+                    WatchWorkoutPlayerView(transferData: transferData)
                 }
             }
         }
         .onChange(of: WatchNavigationManager.shared.shouldStartWorkout) { _, shouldStart in
             if shouldStart {
-                navigationPath.append(WatchPlayerDestination.remote)
+                presentation = .remote
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .watchReceivedDismiss)) { _ in
-            if !navigationPath.isEmpty {
-                navigationPath = NavigationPath()
-            }
+            presentation = nil
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
