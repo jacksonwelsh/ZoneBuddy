@@ -81,7 +81,7 @@ struct WorkoutLibraryView: View {
                             Button {
                                 showGenerateSheet = true
                             } label: {
-                                Label("Generate with AI", systemImage: "sparkles")
+                                Label("Generate with AI (Alpha)", systemImage: "sparkles")
                             }
                         } label: {
                             Label("New Workout", systemImage: "plus")

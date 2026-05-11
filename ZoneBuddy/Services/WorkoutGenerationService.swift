@@ -13,16 +13,50 @@ final class WorkoutGenerationService {
     var state: GenerationState = .idle
 
     static var isAvailable: Bool {
-        SystemLanguageModel.default.availability == .available
+        #if DEBUG
+        return SystemLanguageModel.default.availability == .available
+        #else
+        return false
+        #endif
     }
+
+    private static let maxRepairAttempts = 2
+    private static let durationToleranceFraction = 0.05
 
     func generate(from prompt: String) async {
         state = .generating
 
         do {
             let session = LanguageModelSession(instructions: Self.systemPrompt)
-            let response = try await session.respond(to: prompt, generating: GeneratedWorkout.self)
-            state = .completed(response.content)
+            let options = GenerationOptions(temperature: 0.3)
+
+            var workout = try await session.respond(
+                to: prompt,
+                generating: GeneratedWorkout.self,
+                options: options
+            ).content
+
+            for _ in 0..<Self.maxRepairAttempts {
+                let actual = workout.intervals.reduce(0) { $0 + $1.duration }
+                let target = workout.targetDurationSeconds
+                guard target > 0 else { break }
+                let tolerance = max(30, Int(Double(target) * Self.durationToleranceFraction))
+                if abs(actual - target) <= tolerance { break }
+
+                let repairPrompt = """
+                    The intervals you generated sum to \(actual) seconds, but the target is \
+                    \(target) seconds (off by \(actual - target)). Regenerate the workout so \
+                    the intervals sum exactly to \(target) seconds. Keep the same workout \
+                    style and zone distribution, and set actualDurationSeconds to \(target).
+                    """
+                workout = try await session.respond(
+                    to: repairPrompt,
+                    generating: GeneratedWorkout.self,
+                    options: options
+                ).content
+            }
+
+            state = .completed(workout)
         } catch {
             state = .failed(error)
         }
@@ -32,9 +66,15 @@ final class WorkoutGenerationService {
         You are a Peloton Power Zone workout designer. Generate structured cycling workouts \
         based on the user's description.
 
-        CRITICAL: All duration values are in SECONDS. Convert any minutes to seconds by \
-        multiplying by 60. For example: 5 minutes = 300 seconds, 10 minutes = 600 seconds, \
-        90 seconds = 90.
+        BEFORE RESPONDING, you MUST:
+        1. Read the user prompt and extract the target total duration in seconds. Set \
+        targetDurationSeconds to that value. If the user says "45 minute", that is 2700 seconds.
+        2. Plan intervals whose durations sum EXACTLY to targetDurationSeconds.
+        3. Add up every interval.duration. Set actualDurationSeconds to that sum. \
+        actualDurationSeconds MUST equal targetDurationSeconds.
+
+        All duration values are in SECONDS. Minutes are not seconds. 5 minutes = 300, \
+        10 minutes = 600, 1 minute = 60, 90 seconds = 90.
 
         Power Zones:
         - Zone 1: Active Recovery (easy spin)
@@ -46,74 +86,27 @@ final class WorkoutGenerationService {
         - Zone 7: Neuromuscular (all-out sprint, <30s)
 
         Rules:
-        - ALWAYS start with a warmup interval (zone = null). Warmups are typically 5-10 minutes.
-        - ALWAYS end with a cooldown interval (zone 1). Cooldowns are typically 1-3 minutes.
-        - Match the total workout duration to the user's request as closely as possible.
-        - Use zone = null ONLY for warmup. Use zone 1 for cooldown and active recovery.
+        - ALWAYS start with a warmup interval (zone = null), typically 300-600 seconds.
+        - ALWAYS end with a cooldown interval (zone 1), typically 60-180 seconds.
+        - Use zone = null ONLY for the opening warmup. Use zone 1 for cooldown and active recovery.
         - Include recovery intervals (zone 1 or 2) between high-intensity efforts.
-        - "Endurance ride" means primarily zones 2-3.
-        - "Power zone ride" means a mix of zones 2-5.
-        - "Max effort" or "PZ Max" means including zones 5-7.
+        - "Endurance ride" = primarily zones 2-3.
+        - "Power zone ride" = mix of zones 2-5.
+        - "Max effort" or "PZ Max" = include zones 5-7.
         - Follow the user's prompt closely. If they specify exact durations or patterns, \
         reproduce them exactly.
 
-        EXAMPLES:
-
-        Prompt: "60-minute endurance ride with 5/8/10/8/5 Zone 3 intervals"
-        Name: "5/8/10/8/5"
-        Intervals:
-        - zone: null, duration: 600  (10 min warmup)
-        - zone: 3, duration: 300    (5 min Zone 3)
-        - zone: 2, duration: 180    (3 min Zone 2 recovery)
-        - zone: 3, duration: 480    (8 min Zone 3)
-        - zone: 2, duration: 180    (3 min Zone 2 recovery)
-        - zone: 3, duration: 600    (10 min Zone 3)
-        - zone: 2, duration: 180    (3 min Zone 2 recovery)
-        - zone: 3, duration: 480    (8 min Zone 3)
-        - zone: 2, duration: 180    (3 min Zone 2 recovery)
-        - zone: 3, duration: 300    (5 min Zone 3)
-        - zone: 1, duration: 120    (2 min cooldown)
-        Total: 3600 seconds = 60 minutes
-
-        Prompt: "45-minute endurance ride with alternating Zone 2 and Zone 3"
-        Name: "Triple-8"
-        Intervals:
-        - zone: null, duration: 600  (10 min warmup)
-        - zone: 2, duration: 180    (3 min Zone 2)
-        - zone: 3, duration: 480    (8 min Zone 3)
-        - zone: 2, duration: 180    (3 min Zone 2)
-        - zone: 3, duration: 480    (8 min Zone 3)
-        - zone: 2, duration: 180    (3 min Zone 2)
-        - zone: 3, duration: 480    (8 min Zone 3)
-        - zone: 1, duration: 120    (2 min cooldown)
-        Total: 2700 seconds = 45 minutes
-
-        Prompt: "30-minute over/under power zone workout"
-        Name: "Over/Under"
-        Intervals:
-        - zone: null, duration: 600  (10 min warmup)
-        - zone: 4, duration: 90     (90s Zone 4)
-        - zone: 3, duration: 60     (60s Zone 3)
-        - zone: 5, duration: 45     (45s Zone 5)
-        - zone: 6, duration: 15     (15s Zone 6)
-        - zone: 1, duration: 60     (60s Zone 1 recovery)
-        - zone: 4, duration: 90     (90s Zone 4)
-        - zone: 3, duration: 60     (60s Zone 3)
-        - zone: 5, duration: 45     (45s Zone 5)
-        - zone: 6, duration: 15     (15s Zone 6)
-        - zone: 1, duration: 60     (60s Zone 1 recovery)
-        - zone: 4, duration: 90     (90s Zone 4)
-        - zone: 3, duration: 60     (60s Zone 3)
-        - zone: 5, duration: 45     (45s Zone 5)
-        - zone: 6, duration: 15     (15s Zone 6)
-        - zone: 1, duration: 60     (60s Zone 1 recovery)
-        - zone: 4, duration: 90     (90s Zone 4)
-        - zone: 3, duration: 60     (60s Zone 3)
-        - zone: 5, duration: 45     (45s Zone 5)
-        - zone: 6, duration: 15     (15s Zone 6)
-        - zone: 1, duration: 60     (60s Zone 1 recovery)
-        - zone: 5, duration: 60     (1 min Zone 5)
-        - zone: 1, duration: 60     (1 min cooldown)
-        Total: 1800 seconds = 30 minutes
+        EXAMPLE — Prompt: "45-minute endurance ride with alternating Zone 2 and Zone 3"
+        targetDurationSeconds: 2700
+        Intervals (sum = 2700):
+        - zone: null, duration: 600   (warmup)
+        - zone: 2,    duration: 180
+        - zone: 3,    duration: 480
+        - zone: 2,    duration: 180
+        - zone: 3,    duration: 480
+        - zone: 2,    duration: 180
+        - zone: 3,    duration: 480
+        - zone: 1,    duration: 120   (cooldown)
+        actualDurationSeconds: 2700
         """
 }

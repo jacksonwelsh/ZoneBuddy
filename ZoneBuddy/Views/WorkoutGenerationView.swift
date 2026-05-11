@@ -40,6 +40,21 @@ struct WorkoutGenerationView: View {
     private func promptView(error: Error?) -> some View {
         Form {
             Section {
+                HStack(spacing: 8) {
+                    Text("ALPHA")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(.orange.opacity(0.2), in: .capsule)
+                        .foregroundStyle(.orange)
+                    Text("Output quality is a work in progress — review the generated workout before saving.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .listRowBackground(Color.clear)
+            }
+
+            Section {
                 TextField("Describe your workout...", text: $prompt, axis: .vertical)
                     .lineLimit(3...6)
             } header: {
