@@ -33,6 +33,5 @@ struct WorkoutLayoutEditorView: View {
         .listStyle(.insetGrouped)
         .navigationTitle("Workout Display")
         .navigationBarTitleDisplayMode(.large)
-        .preferredColorScheme(.dark)
     }
 }

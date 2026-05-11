@@ -22,8 +22,7 @@ struct OnboardingFlowView: View {
                 ))
         }
         .animation(.easeInOut(duration: 0.28), value: viewModel.currentStep)
-        .background(Color.black.ignoresSafeArea())
-        .preferredColorScheme(.dark)
+        .background(Color(.systemBackground).ignoresSafeArea())
     }
 
     private var topBar: some View {

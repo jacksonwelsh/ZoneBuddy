@@ -100,11 +100,11 @@ final class SettingsManager {
     }
 
     /// True once the user has completed the first-launch onboarding flow.
-    /// Backed by iCloud KV store so reinstalling the app on the same Apple ID does not replay onboarding.
+    /// Backed by local `UserDefaults` (not iCloud) so a fresh install replays onboarding —
+    /// permissions like Bluetooth need to be re-requested after reinstall anyway.
     var hasCompletedOnboarding: Bool {
         didSet {
-            store.set(hasCompletedOnboarding, forKey: Keys.hasCompletedOnboarding)
-            store.synchronize()
+            UserDefaults.standard.set(hasCompletedOnboarding, forKey: Keys.hasCompletedOnboarding)
         }
     }
 
@@ -163,11 +163,7 @@ final class SettingsManager {
             self.promptForBikeBeforeWorkout = store.bool(forKey: Keys.promptForBikeBeforeWorkout)
         }
 
-        if store.object(forKey: Keys.hasCompletedOnboarding) == nil {
-            self.hasCompletedOnboarding = false
-        } else {
-            self.hasCompletedOnboarding = store.bool(forKey: Keys.hasCompletedOnboarding)
-        }
+        self.hasCompletedOnboarding = UserDefaults.standard.bool(forKey: Keys.hasCompletedOnboarding)
 
         NotificationCenter.default.addObserver(
             forName: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
@@ -210,10 +206,6 @@ final class SettingsManager {
 
         if store.object(forKey: Keys.promptForBikeBeforeWorkout) != nil {
             promptForBikeBeforeWorkout = store.bool(forKey: Keys.promptForBikeBeforeWorkout)
-        }
-
-        if store.object(forKey: Keys.hasCompletedOnboarding) != nil {
-            hasCompletedOnboarding = store.bool(forKey: Keys.hasCompletedOnboarding)
         }
     }
 

@@ -111,7 +111,6 @@ struct SettingsView: View {
             .navigationBarTitleDisplayMode(.large)
             .background(Color(.systemGroupedBackground))
             .scrollContentBackground(.visible)
-            .preferredColorScheme(.dark)
             .onAppear {
                 ftpText = "\(settings.functionalThresholdPower)"
                 maxHRText = "\(settings.maxHeartRate)"

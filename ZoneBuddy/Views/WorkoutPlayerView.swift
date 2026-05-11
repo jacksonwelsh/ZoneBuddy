@@ -107,6 +107,7 @@ struct WorkoutPlayerView: View {
         .toolbar(.hidden, for: .tabBar)
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
+        .preferredColorScheme(.dark)
         .onAppear {
             if isXcodePreview { return }
             UIApplication.shared.isIdleTimerDisabled = true
