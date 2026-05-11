@@ -70,7 +70,8 @@ struct WorkoutPlayerView: View {
             bikeManager: resolvedBike,
             healthKitManager: healthKit,
             heartRateStreamer: hrStreamer,
-            ftpTestIntervalIndex: ftpTestIntervalIndex
+            ftpTestIntervalIndex: ftpTestIntervalIndex,
+            sessionPersister: LiveWorkoutSessionPersister(context: DataStore.shared.context)
         ))
     }
 

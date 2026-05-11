@@ -53,11 +53,17 @@ struct PowerZoneTests {
     // MARK: - FTP-Based Calculations
 
     @Test(arguments: [100, 200, 300])
-    func wattRangesAreOrderedAndNonOverlapping(ftp: Int) {
-        var previousUpper = -1
+    func wattRangesAreContinuousAndNonOverlapping(ftp: Int) {
+        // Adjacent zones must satisfy zoneN.upperBound + 1 == zoneN+1.lowerBound so
+        // every integer watt value maps to exactly one zone.
+        var previousUpper: Int? = nil
         for zone in PowerZone.allCases {
             let range = zone.wattRange(ftp: ftp)
-            #expect(range.lowerBound >= previousUpper, "Zone \(zone.rawValue) lower (\(range.lowerBound)) should be >= previous upper (\(previousUpper)) at FTP \(ftp)")
+            if let prev = previousUpper {
+                #expect(range.lowerBound == prev + 1, "Zone \(zone.rawValue) lower (\(range.lowerBound)) should equal previous upper (\(prev)) + 1 at FTP \(ftp)")
+            } else {
+                #expect(range.lowerBound == 0, "Zone 1 should start at 0W")
+            }
             #expect(range.upperBound >= range.lowerBound, "Zone \(zone.rawValue) range should be non-empty at FTP \(ftp)")
             previousUpper = range.upperBound
         }
@@ -66,14 +72,26 @@ struct PowerZoneTests {
     @Test
     func wattRangeAtFTP200() {
         let ftp = 200
-        // Zone 1: <55% = 0-110
-        #expect(PowerZone.zone1.wattRange(ftp: ftp).upperBound == 110)
-        // Zone 2: 55-75% = 110-150
-        #expect(PowerZone.zone2.wattRange(ftp: ftp).lowerBound == 110)
-        #expect(PowerZone.zone2.wattRange(ftp: ftp).upperBound == 150)
-        // Zone 4: 91-105% = 182-210
-        #expect(PowerZone.zone4.wattRange(ftp: ftp).lowerBound == 182)
-        #expect(PowerZone.zone4.wattRange(ftp: ftp).upperBound == 210)
+        // Zone 1: 0..55% = 0-110W
+        #expect(PowerZone.zone1.wattRange(ftp: ftp) == 0...110)
+        // Zone 2: starts 1W above zone1's upper bound
+        #expect(PowerZone.zone2.wattRange(ftp: ftp) == 111...150)
+        // Zone 4: 91-105% = 181-210W (continuous from zone3's 180W upper)
+        #expect(PowerZone.zone4.wattRange(ftp: ftp) == 181...210)
+    }
+
+    @Test
+    func wattRangeAndZoneForPowerAgree() {
+        // Regression: previously `wattRange` produced gaps between zones (e.g. 151W at FTP=200
+        // fell into no displayed zone, but `zone(forPower:)` classified it as zone3). Verify
+        // every integer watt in a zone's `wattRange` classifies into that same zone.
+        let ftp = 200
+        for zone in PowerZone.allCases {
+            let range = zone.wattRange(ftp: ftp)
+            for watts in range {
+                #expect(PowerZone.zone(forPower: watts, ftp: ftp) == zone, "\(watts)W in \(zone.displayName).wattRange but classifies into \(String(describing: PowerZone.zone(forPower: watts, ftp: ftp)))")
+            }
+        }
     }
 
     @Test

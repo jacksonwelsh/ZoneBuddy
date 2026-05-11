@@ -1,4 +1,5 @@
 import CoreBluetooth
+import os
 
 /// Receives heart rate from a Watch over BLE and sends workout commands.
 /// The iPad/iPhone acts as a CBPeripheral, advertising a custom service.
@@ -16,7 +17,10 @@ final class BLEHeartRateScanner: HeartRateStreaming {
     private var peripheralDelegate: PeripheralDelegate?
 
     /// Workout JSON the Watch reads after receiving a start notification.
-    nonisolated(unsafe) private var pendingWorkoutData: Data?
+    /// Lock-protected because the BLE delegate (running on CoreBluetooth's internal queue)
+    /// reads it from `peripheralManager(_:didReceiveRead:)` concurrently with MainActor
+    /// writes from `sendWorkoutStart` / `sendEndCommand`.
+    @ObservationIgnored private let pendingWorkoutData = OSAllocatedUnfairLock<Data?>(initialState: nil)
 
     private init() {}
 
@@ -34,20 +38,16 @@ final class BLEHeartRateScanner: HeartRateStreaming {
                 }
             },
             getWorkoutData: { [weak self] in
-                self?.pendingWorkoutData
+                self?.pendingWorkoutData.withLock { $0 }
             },
             onWatchCommand: { [weak self] command in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     switch command {
-                    case BLECommand.pauseWorkout:
-                        self.watchPausedWorkout = true
-                    case BLECommand.resumeWorkout:
-                        self.watchResumedWorkout = true
-                    case BLECommand.endWorkout:
-                        self.watchEndedWorkout = true
-                    default:
-                        break
+                    case .pauseWorkout: self.watchPausedWorkout = true
+                    case .resumeWorkout: self.watchResumedWorkout = true
+                    case .endWorkout: self.watchEndedWorkout = true
+                    case .startWorkout: break // iPad is the producer, ignore reflected start
                     }
                 }
             }
@@ -63,49 +63,43 @@ final class BLEHeartRateScanner: HeartRateStreaming {
         peripheralDelegate?.stop()
         peripheralDelegate = nil
         latestHeartRate = nil
-        pendingWorkoutData = nil
+        pendingWorkoutData.withLock { $0 = nil }
     }
 
     // MARK: - Workout Commands (iPad → Watch via BLE)
 
     func sendWorkoutStart(_ transferData: WorkoutTransferData) {
-        pendingWorkoutData = try? JSONEncoder().encode(transferData)
-        peripheralDelegate?.sendCommand(BLECommand.startWorkout)
+        let encoded = try? JSONEncoder().encode(transferData)
+        pendingWorkoutData.withLock { $0 = encoded }
+        peripheralDelegate?.sendCommand(.startWorkout)
     }
 
     func sendPauseCommand() {
-        peripheralDelegate?.sendCommand(BLECommand.pauseWorkout)
+        peripheralDelegate?.sendCommand(.pauseWorkout)
     }
 
     func sendResumeCommand() {
-        peripheralDelegate?.sendCommand(BLECommand.resumeWorkout)
+        peripheralDelegate?.sendCommand(.resumeWorkout)
     }
 
     func sendEndCommand() {
-        peripheralDelegate?.sendCommand(BLECommand.endWorkout)
-        pendingWorkoutData = nil
+        peripheralDelegate?.sendCommand(.endWorkout)
+        pendingWorkoutData.withLock { $0 = nil }
     }
 
     // MARK: - Peripheral Delegate
 
     private class PeripheralDelegate: NSObject, CBPeripheralManagerDelegate {
-        /// Must match WatchHRBroadcaster UUIDs
-        nonisolated(unsafe) private static let serviceUUID = CBUUID(string: "B5E5D4A1-4F2C-4C33-9E01-1A2B3C4D5E6F")
-        nonisolated(unsafe) private static let hrCharUUID = CBUUID(string: "B5E5D4A2-4F2C-4C33-9E01-1A2B3C4D5E6F")
-        nonisolated(unsafe) private static let commandCharUUID = CBUUID(string: "B5E5D4A3-4F2C-4C33-9E01-1A2B3C4D5E6F")
-        /// Watch → iPad command channel (Watch writes here to send pause/resume/end)
-        nonisolated(unsafe) private static let watchCommandCharUUID = CBUUID(string: "B5E5D4A4-4F2C-4C33-9E01-1A2B3C4D5E6F")
-
         private var manager: CBPeripheralManager?
         private let onHeartRate: @Sendable (Int) -> Void
         private let getWorkoutData: @Sendable () -> Data?
-        private let onWatchCommand: @Sendable (UInt8) -> Void
+        private let onWatchCommand: @Sendable (BLECommand) -> Void
         private var commandCharacteristic: CBMutableCharacteristic?
 
         init(
             onHeartRate: @escaping @Sendable (Int) -> Void,
             getWorkoutData: @escaping @Sendable () -> Data?,
-            onWatchCommand: @escaping @Sendable (UInt8) -> Void
+            onWatchCommand: @escaping @Sendable (BLECommand) -> Void
         ) {
             self.onHeartRate = onHeartRate
             self.getWorkoutData = getWorkoutData
@@ -122,12 +116,12 @@ final class BLEHeartRateScanner: HeartRateStreaming {
             commandCharacteristic = nil
         }
 
-        func sendCommand(_ command: UInt8) {
+        func sendCommand(_ command: BLECommand) {
             guard let manager, let characteristic = commandCharacteristic else {
                 print("BLEHeartRateScanner: cannot send command \(command) — not ready")
                 return
             }
-            let sent = manager.updateValue(Data([command]), for: characteristic, onSubscribedCentrals: nil)
+            let sent = manager.updateValue(Data([command.rawValue]), for: characteristic, onSubscribedCentrals: nil)
             print("BLEHeartRateScanner: sent command \(command), queued: \(sent)")
         }
 
@@ -138,14 +132,14 @@ final class BLEHeartRateScanner: HeartRateStreaming {
             guard peripheral.state == .poweredOn else { return }
 
             let hrCharacteristic = CBMutableCharacteristic(
-                type: Self.hrCharUUID,
+                type: BLEProtocol.hrCharUUID,
                 properties: [.write, .writeWithoutResponse],
                 value: nil,
                 permissions: .writeable
             )
 
             let cmdCharacteristic = CBMutableCharacteristic(
-                type: Self.commandCharUUID,
+                type: BLEProtocol.commandCharUUID,
                 properties: [.read, .notify],
                 value: nil,
                 permissions: .readable
@@ -153,13 +147,13 @@ final class BLEHeartRateScanner: HeartRateStreaming {
 
             // Watch writes pause/resume/end commands here
             let watchCmdCharacteristic = CBMutableCharacteristic(
-                type: Self.watchCommandCharUUID,
+                type: BLEProtocol.watchCommandCharUUID,
                 properties: [.write, .writeWithoutResponse],
                 value: nil,
                 permissions: .writeable
             )
 
-            let service = CBMutableService(type: Self.serviceUUID, primary: true)
+            let service = CBMutableService(type: BLEProtocol.serviceUUID, primary: true)
             service.characteristics = [hrCharacteristic, cmdCharacteristic, watchCmdCharacteristic]
             peripheral.add(service)
 
@@ -175,8 +169,8 @@ final class BLEHeartRateScanner: HeartRateStreaming {
             }
             print("BLEHeartRateScanner: service added, starting advertising")
             peripheral.startAdvertising([
-                CBAdvertisementDataServiceUUIDsKey: [Self.serviceUUID],
-                CBAdvertisementDataLocalNameKey: "ZoneBuddy",
+                CBAdvertisementDataServiceUUIDsKey: [BLEProtocol.serviceUUID],
+                CBAdvertisementDataLocalNameKey: BLEProtocol.advertisedLocalName,
             ])
         }
 
@@ -191,11 +185,14 @@ final class BLEHeartRateScanner: HeartRateStreaming {
         nonisolated func peripheralManager(_ peripheral: CBPeripheralManager, didReceiveWrite requests: [CBATTRequest]) {
             for request in requests {
                 guard let data = request.value, !data.isEmpty else { continue }
-                if request.characteristic.uuid == Self.hrCharUUID {
+                if request.characteristic.uuid == BLEProtocol.hrCharUUID {
                     let bpm = Int(data[0])
                     onHeartRate(bpm)
-                } else if request.characteristic.uuid == Self.watchCommandCharUUID {
-                    let command = data[0]
+                } else if request.characteristic.uuid == BLEProtocol.watchCommandCharUUID {
+                    guard let command = BLECommand(rawValue: data[0]) else {
+                        print("BLEHeartRateScanner: unknown Watch command \(data[0])")
+                        continue
+                    }
                     print("BLEHeartRateScanner: received Watch command \(command)")
                     onWatchCommand(command)
                 }
@@ -208,9 +205,9 @@ final class BLEHeartRateScanner: HeartRateStreaming {
         nonisolated func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral, didSubscribeTo characteristic: CBCharacteristic) {
             print("BLEHeartRateScanner: central subscribed to \(characteristic.uuid)")
             // If we have a pending workout, notify the new subscriber
-            if characteristic.uuid == Self.commandCharUUID, getWorkoutData() != nil {
+            if characteristic.uuid == BLEProtocol.commandCharUUID, getWorkoutData() != nil {
                 Task { @MainActor in
-                    self.sendCommand(BLECommand.startWorkout)
+                    self.sendCommand(.startWorkout)
                 }
             }
         }
@@ -220,7 +217,7 @@ final class BLEHeartRateScanner: HeartRateStreaming {
         }
 
         nonisolated func peripheralManager(_ peripheral: CBPeripheralManager, didReceiveRead request: CBATTRequest) {
-            guard request.characteristic.uuid == Self.commandCharUUID else {
+            guard request.characteristic.uuid == BLEProtocol.commandCharUUID else {
                 peripheral.respond(to: request, withResult: .requestNotSupported)
                 return
             }
@@ -233,14 +230,6 @@ final class BLEHeartRateScanner: HeartRateStreaming {
             }
         }
     }
-}
-
-/// Command bytes sent over BLE between iPad and Watch.
-enum BLECommand {
-    static let startWorkout: UInt8 = 0x01
-    static let pauseWorkout: UInt8 = 0x02
-    static let resumeWorkout: UInt8 = 0x03
-    static let endWorkout: UInt8 = 0x04
 }
 
 #if DEBUG

@@ -56,23 +56,31 @@ enum PowerZone: Int, Codable, CaseIterable, Identifiable, Sendable {
 
     // MARK: - FTP-Based Calculations
 
-    /// Standard Peloton Power Zone percentage ranges relative to FTP.
-    private var ftpPercentRange: ClosedRange<Double> {
+    /// Inclusive upper bound % of FTP for this zone (Peloton Power Zones).
+    /// Single source of truth: both `wattRange` and `zone(forPower:)` derive from this so
+    /// the displayed watt range always matches the zone the same power classifies into.
+    private var upperBoundPercent: Double {
         switch self {
-        case .zone1: return 0...0.55
-        case .zone2: return 0.55...0.75
-        case .zone3: return 0.76...0.90
-        case .zone4: return 0.91...1.05
-        case .zone5: return 1.06...1.20
-        case .zone6: return 1.21...1.50
-        case .zone7: return 1.50...3.0
+        case .zone1: 0.55
+        case .zone2: 0.75
+        case .zone3: 0.90
+        case .zone4: 1.05
+        case .zone5: 1.20
+        case .zone6: 1.50
+        case .zone7: 3.0
         }
     }
 
-    /// Watt range for this zone given an FTP value.
+    /// Watt range for this zone given an FTP value. Adjacent zones' ranges are continuous
+    /// (no overlap, no gap): `zoneN.upperBound + 1 == zoneN+1.lowerBound`.
     func wattRange(ftp: Int) -> ClosedRange<Int> {
-        let lower = Int((ftpPercentRange.lowerBound * Double(ftp)).rounded())
-        let upper = Int((ftpPercentRange.upperBound * Double(ftp)).rounded())
+        let upper = Int((upperBoundPercent * Double(ftp)).rounded())
+        let lower: Int
+        if let previous = PowerZone(rawValue: rawValue - 1) {
+            lower = Int((previous.upperBoundPercent * Double(ftp)).rounded()) + 1
+        } else {
+            lower = 0
+        }
         return lower...upper
     }
 
@@ -98,12 +106,9 @@ enum PowerZone: Int, Codable, CaseIterable, Identifiable, Sendable {
     static func zone(forPower power: Int, ftp: Int) -> PowerZone? {
         guard ftp > 0 && power >= 0 else { return nil }
         let pct = Double(power) / Double(ftp)
-        if pct <= 0.55 { return .zone1 }
-        if pct <= 0.75 { return .zone2 }
-        if pct <= 0.90 { return .zone3 }
-        if pct <= 1.05 { return .zone4 }
-        if pct <= 1.20 { return .zone5 }
-        if pct <= 1.50 { return .zone6 }
+        for zone in PowerZone.allCases {
+            if pct <= zone.upperBoundPercent { return zone }
+        }
         return .zone7
     }
 }

@@ -159,10 +159,6 @@ struct SessionShareCardView: View {
 
     private static let canvasSize: CGFloat = 1080
 
-    private static var usesMetric: Bool {
-        Locale.current.measurementSystem != .us
-    }
-
     var body: some View {
         ZStack {
             background
@@ -308,11 +304,7 @@ struct SessionShareCardView: View {
             return MetricItem(component: component, label: component.shortLabel, value: "\(v)", unit: "kcal", icon: "flame.fill", accent: .orange)
         case .distance:
             guard let meters = session.totalDistance, meters > 0 else { return nil }
-            let value = Self.usesMetric
-                ? String(format: "%.1f", meters / 1000.0)
-                : String(format: "%.1f", meters / 1609.344)
-            let unit = Self.usesMetric ? "km" : "mi"
-            return MetricItem(component: component, label: component.shortLabel, value: value, unit: unit, icon: "road.lanes", accent: .blue)
+            return MetricItem(component: component, label: component.shortLabel, value: UnitFormatting.distance(meters: meters), unit: UnitFormatting.distanceUnit, icon: "road.lanes", accent: .blue)
         case .avgPower:
             guard let v = session.avgPower else { return nil }
             return MetricItem(component: component, label: component.shortLabel, value: "\(v)", unit: "W", icon: "bolt.fill", accent: .yellow)

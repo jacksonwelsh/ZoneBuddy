@@ -80,23 +80,10 @@ struct SpeedTile: View {
     let speed: Double? // km/h from bike
     let foregroundColor: Color
 
-    private var usesMetric: Bool {
-        Locale.current.measurementSystem != .us
-    }
-
-    private var displayValue: String {
-        guard let speed else { return "--" }
-        return usesMetric
-            ? String(format: "%.1f", speed)
-            : String(format: "%.1f", speed * 0.621371)
-    }
-
-    private var unit: String { usesMetric ? "km/h" : "mph" }
-
     var body: some View {
         MetricValueView(
-            value: displayValue,
-            unit: unit,
+            value: speed.map { UnitFormatting.speed(kmh: $0) } ?? "--",
+            unit: UnitFormatting.speedUnit,
             label: "Speed",
             foregroundColor: foregroundColor
         )
@@ -107,23 +94,10 @@ struct DistanceTile: View {
     let distance: Double? // meters
     let foregroundColor: Color
 
-    private var usesMetric: Bool {
-        Locale.current.measurementSystem != .us
-    }
-
-    private var displayValue: String {
-        guard let distance else { return "--" }
-        return usesMetric
-            ? String(format: "%.2f", distance / 1000.0)
-            : String(format: "%.2f", distance / 1609.344)
-    }
-
-    private var unit: String { usesMetric ? "km" : "mi" }
-
     var body: some View {
         MetricValueView(
-            value: displayValue,
-            unit: unit,
+            value: distance.map { UnitFormatting.distance(meters: $0, precision: 2) } ?? "--",
+            unit: UnitFormatting.distanceUnit,
             label: "Distance",
             foregroundColor: foregroundColor
         )

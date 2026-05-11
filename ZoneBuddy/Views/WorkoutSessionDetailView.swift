@@ -14,10 +14,6 @@ struct WorkoutSessionDetailView: View {
 
     @State private var showDeleteConfirm = false
 
-    private static var usesMetric: Bool {
-        Locale.current.measurementSystem != .us
-    }
-
     private var isCompletion: Bool {
         if case .completion = mode { return true }
         return false
@@ -183,8 +179,8 @@ struct WorkoutSessionDetailView: View {
             if let distance = session.totalDistance, distance > 0 {
                 MetricCell(
                     label: "DISTANCE",
-                    value: formattedDistance(distance),
-                    unit: Self.usesMetric ? "km" : "mi"
+                    value: UnitFormatting.distance(meters: distance),
+                    unit: UnitFormatting.distanceUnit
                 )
             }
             if let calories = session.totalCalories, calories > 0 {
@@ -260,12 +256,6 @@ struct WorkoutSessionDetailView: View {
         }
     }
 
-    private func formattedDistance(_ meters: Double) -> String {
-        if Self.usesMetric {
-            return String(format: "%.1f", meters / 1000.0)
-        }
-        return String(format: "%.1f", meters / 1609.344)
-    }
 }
 
 // MARK: - Row Components

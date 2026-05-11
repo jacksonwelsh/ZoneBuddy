@@ -1,13 +1,20 @@
 import Foundation
 import SwiftData
+import os
 
 @MainActor
 final class DataStore {
     static let shared = DataStore()
-    
+
+    static let logger = Logger(subsystem: "dev.jacksn.ZoneBuddy", category: "DataStore")
+
     let container: ModelContainer
     let context: ModelContext
-    
+
+    /// True when the CloudKit-backed configuration failed and we fell back to local-only storage.
+    /// Surfaceable by the UI so users know iCloud sync is off for this session.
+    let isCloudKitDisabled: Bool
+
     private init() {
         let schema = Schema([
             Workout.self,
@@ -22,9 +29,19 @@ final class DataStore {
 
         do {
             container = try ModelContainer(for: schema, configurations: [modelConfiguration])
+            isCloudKitDisabled = false
         } catch {
+            // CloudKit-backed container failed. Log the cause and fall back to local-only
+            // storage; the user keeps a working app but loses iCloud sync until next launch.
+            Self.logger.error("CloudKit-backed ModelContainer failed, falling back to local-only: \(error, privacy: .public)")
             let fallback = ModelConfiguration(schema: schema, cloudKitDatabase: .none)
-            container = try! ModelContainer(for: schema, configurations: [fallback])
+            do {
+                container = try ModelContainer(for: schema, configurations: [fallback])
+            } catch {
+                Self.logger.fault("Local-only ModelContainer also failed: \(error, privacy: .public)")
+                fatalError("Unable to initialize ModelContainer: \(error)")
+            }
+            isCloudKitDisabled = true
         }
         context = container.mainContext
     }

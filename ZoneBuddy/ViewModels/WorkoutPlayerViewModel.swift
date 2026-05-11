@@ -16,21 +16,8 @@ struct WorkoutSummary {
     let duration: Int
     let zoneTimeBreakdown: [PowerZone: Int] // zone -> seconds spent
 
-    private static var usesMetric: Bool {
-        Locale.current.measurementSystem != .us
-    }
-
-    var formattedDistance: String {
-        if Self.usesMetric {
-            return String(format: "%.1f", totalDistance / 1000.0)
-        } else {
-            return String(format: "%.1f", totalDistance / 1609.344)
-        }
-    }
-
-    var distanceUnit: String {
-        Self.usesMetric ? "km" : "mi"
-    }
+    var formattedDistance: String { UnitFormatting.distance(meters: totalDistance) }
+    var distanceUnit: String { UnitFormatting.distanceUnit }
 }
 
 @Observable
@@ -56,7 +43,7 @@ final class WorkoutPlayerViewModel {
 
     var isFTPTest: Bool { ftpTestIntervalIndex != nil }
     var showTimer: Bool = true
-    var audioCuesEnabled: Bool = SettingsManager.shared.audioCuesEnabled
+    var audioCuesEnabled: Bool
 
     // MARK: - Computed
 
@@ -126,7 +113,7 @@ final class WorkoutPlayerViewModel {
     // MARK: - FTP & Power Zone Computed Properties
 
     var currentFTP: Int {
-        SettingsManager.shared.functionalThresholdPower
+        settings.functionalThresholdPower
     }
 
     var targetPowerRange: ClosedRange<Int>? {
@@ -169,23 +156,11 @@ final class WorkoutPlayerViewModel {
             return Int(live)
         }
         // Always compute from integrated power output — bike-reported calories are unreliable
-        guard let outputKJ = currentTotalOutputKJ else { return nil }
-        let cyclingEfficiency = 0.25
-        return Int(outputKJ * 1000.0 / (cyclingEfficiency * 4184.0))
+        return WorkoutSampleAggregator.estimatedCalories(in: allBikeSamples)
     }
 
     var currentTotalOutputKJ: Double? {
-        guard allBikeSamples.count > 1 else { return nil }
-        var joules: Double = 0
-        for i in 1..<allBikeSamples.count {
-            if let power = allBikeSamples[i].power {
-                let dt = allBikeSamples[i].timestamp.timeIntervalSince(allBikeSamples[i - 1].timestamp)
-                if dt > 0 && dt < 30 {
-                    joules += Double(power) * dt
-                }
-            }
-        }
-        return joules / 1000.0
+        WorkoutSampleAggregator.totalOutputKJ(in: allBikeSamples)
     }
 
     /// Heart rate: prefer Watch/HK streamer, fall back to bike HR only when streamer has no data.
@@ -201,7 +176,7 @@ final class WorkoutPlayerViewModel {
     }
 
     var currentMaxHR: Int {
-        SettingsManager.shared.maxHeartRate
+        settings.maxHeartRate
     }
 
     /// Running average heart rate across the current workout session.
@@ -243,6 +218,8 @@ final class WorkoutPlayerViewModel {
     private let heartRateStreamer: HeartRateStreaming?
     let ftpTestIntervalIndex: Int?
     private let shouldPersistSession: Bool
+    private let settings: any SettingsReading
+    private let sessionPersister: WorkoutSessionPersisting?
     private var ftpTestStartedAt: Date?
     private var ftpTestEndedAt: Date?
     private var healthKitFlushTask: Task<Void, Never>?
@@ -253,7 +230,6 @@ final class WorkoutPlayerViewModel {
     private var zoneTimeAccumulator: [PowerZone: Int] = [:]
     private(set) var onTargetZoneAccumulator: [PowerZone: Int] = [:]
     private(set) var hrZoneTimeAccumulator: [HeartRateZone: Int] = [:]
-    private var lastZoneTickIndex: Int = -1
     /// Running distance in meters, computed by integrating speed over time from bike samples.
     private(set) var computedDistanceMeters: Double = 0
     private var lastSpeedSampleDate: Date?
@@ -283,7 +259,9 @@ final class WorkoutPlayerViewModel {
         healthKitManager: HealthKitWorkoutRecording? = nil,
         heartRateStreamer: HeartRateStreaming? = nil,
         ftpTestIntervalIndex: Int? = nil,
-        shouldPersistSession: Bool = true
+        shouldPersistSession: Bool = true,
+        settings: any SettingsReading = SettingsManager.shared,
+        sessionPersister: WorkoutSessionPersisting? = nil
     ) {
         self.intervals = intervals
         self.timerProvider = timerProvider
@@ -303,6 +281,9 @@ final class WorkoutPlayerViewModel {
         self.heartRateStreamer = heartRateStreamer
         self.ftpTestIntervalIndex = ftpTestIntervalIndex
         self.shouldPersistSession = shouldPersistSession
+        self.settings = settings
+        self.sessionPersister = sessionPersister
+        self.audioCuesEnabled = settings.audioCuesEnabled
         if let first = intervals.first {
             self.secondsRemaining = first.duration
         }
@@ -384,7 +365,7 @@ final class WorkoutPlayerViewModel {
                 }
 
                 // Heart rate zone time (actual)
-                let maxHR = SettingsManager.shared.maxHeartRate
+                let maxHR = self.settings.maxHeartRate
                 if let bpm = self.currentHeartRate, maxHR > 0,
                    let hrZone = HeartRateZone.zone(forBPM: bpm, maxHR: maxHR) {
                     self.hrZoneTimeAccumulator[hrZone, default: 0] += 1
@@ -667,17 +648,9 @@ final class WorkoutPlayerViewModel {
 
     /// Integrate speed (km/h) over time intervals between consecutive samples to accumulate distance in meters.
     private func integrateSpeedSamples(_ samples: [BikeDataSample]) {
-        for sample in samples {
-            if let speed = sample.speed, let lastDate = lastSpeedSampleDate {
-                let dt = sample.timestamp.timeIntervalSince(lastDate)
-                if dt > 0 && dt < 30 { // ignore gaps > 30s (e.g. pauses)
-                    // speed is km/h, convert to m/s: * 1000/3600
-                    let metersPerSecond = speed * 1000.0 / 3600.0
-                    computedDistanceMeters += metersPerSecond * dt
-                }
-            }
-            lastSpeedSampleDate = sample.timestamp
-        }
+        let (meters, last) = WorkoutSampleAggregator.integrateDistance(in: samples, startingFrom: lastSpeedSampleDate)
+        computedDistanceMeters += meters
+        lastSpeedSampleDate = last
     }
 
     private func handleFTPTestIntervalTransition(from previousIndex: Int, to newIndex: Int) {
@@ -753,21 +726,8 @@ final class WorkoutPlayerViewModel {
         let bikeHeartRates = allBikeSamples.compactMap(\.heartRate).filter { $0 > 0 }
         let heartRates = allHRSamples.isEmpty ? bikeHeartRates : allHRSamples
 
-        // Compute total output (kJ) from power samples: Σ(watts × dt) / 1000
-        var totalJoules: Double = 0
-        if allBikeSamples.count > 1 {
-            for i in 1..<allBikeSamples.count {
-                if let power = allBikeSamples[i].power {
-                    let dt = allBikeSamples[i].timestamp.timeIntervalSince(allBikeSamples[i - 1].timestamp)
-                    if dt > 0 && dt < 30 {
-                        totalJoules += Double(power) * dt
-                    }
-                }
-            }
-        }
-        let totalOutputKJ = totalJoules / 1000.0
-        let cyclingEfficiency = 0.25
-        let computedCalories = Int(totalJoules / (cyclingEfficiency * 4184.0))
+        let totalOutputKJ = WorkoutSampleAggregator.totalOutputKJ(in: allBikeSamples) ?? 0
+        let computedCalories = WorkoutSampleAggregator.estimatedCalories(in: allBikeSamples) ?? 0
 
         let summaryAvgPower = powers.isEmpty ? 0 : powers.reduce(0, +) / powers.count
         let summaryMaxPower = powers.max() ?? 0
@@ -858,8 +818,8 @@ final class WorkoutPlayerViewModel {
             onTargetZoneSeconds: onTargetZoneAccumulator,
             scheduledZoneSeconds: zoneTimeAccumulator,
             hrZoneSeconds: hrZoneTimeAccumulator,
-            ftpAtTime: SettingsManager.shared.functionalThresholdPower,
-            maxHRAtTime: SettingsManager.shared.maxHeartRate,
+            ftpAtTime: settings.functionalThresholdPower,
+            maxHRAtTime: settings.maxHeartRate,
             bikeWasConnected: isConnectedToBike
         )
 
@@ -872,16 +832,10 @@ final class WorkoutPlayerViewModel {
         }
         session.intervals = snapshots
 
-        let context = DataStore.shared.context
-        context.insert(session)
-        for snapshot in snapshots {
-            context.insert(snapshot)
-        }
-        do {
-            try context.save()
-            self.savedSession = session
-        } catch {
-            print("Failed to save WorkoutSession: \(error)")
+        // If no persister was injected, this is a non-persisting context (e.g. Watch
+        // playback or a test fixture); skip persistence silently.
+        if let saved = sessionPersister?.save(session, intervals: snapshots) {
+            self.savedSession = saved
         }
     }
 }

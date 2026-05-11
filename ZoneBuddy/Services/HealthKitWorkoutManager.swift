@@ -54,11 +54,7 @@ final class LiveHealthKitWorkoutManager: HealthKitWorkoutRecording {
 
         var hkSamples: [HKQuantitySample] = []
 
-        // Accumulators for batch-level energy and distance
-        var totalJoules: Double = 0
-        var totalDistanceMeters: Double = 0
-
-        for (index, sample) in samples.enumerated() {
+        for sample in samples {
             let date = sample.timestamp
 
             if let power = sample.power {
@@ -68,14 +64,6 @@ final class LiveHealthKitWorkoutManager: HealthKitWorkoutRecording {
                     start: date,
                     end: date
                 ))
-
-                // Compute energy: watts × dt → joules
-                if index > 0 {
-                    let dt = date.timeIntervalSince(samples[index - 1].timestamp)
-                    if dt > 0 && dt < 30 {
-                        totalJoules += Double(power) * dt
-                    }
-                }
             }
 
             if let cadence = sample.cadence {
@@ -96,35 +84,24 @@ final class LiveHealthKitWorkoutManager: HealthKitWorkoutRecording {
                     end: date
                 ))
             }
-
-            // Compute distance: speed (km/h) × dt → meters
-            if let speed = sample.speed, index > 0 {
-                let dt = date.timeIntervalSince(samples[index - 1].timestamp)
-                if dt > 0 && dt < 30 {
-                    totalDistanceMeters += speed * (1000.0 / 3600.0) * dt
-                }
-            }
         }
 
-        // Add activeEnergyBurned sample for the batch.
-        // Gross mechanical efficiency of cycling is ~25%, so metabolic cost = output / 0.25.
-        // This gives kcal ≈ kJ_output numerically (the well-known cyclist's approximation).
-        let cyclingEfficiency = 0.25
-        if totalJoules > 0 {
-            let kcal = totalJoules / (cyclingEfficiency * 4184.0)
+        // Batch-level energy and distance: same physics used by the live view-model totals,
+        // so the workout summary and HealthKit record always agree.
+        if let kcal = WorkoutSampleAggregator.estimatedCalories(in: samples), kcal > 0 {
             hkSamples.append(HKQuantitySample(
                 type: HKQuantityType(.activeEnergyBurned),
-                quantity: HKQuantity(unit: .kilocalorie(), doubleValue: kcal),
+                quantity: HKQuantity(unit: .kilocalorie(), doubleValue: Double(kcal)),
                 start: samples.first!.timestamp,
                 end: samples.last!.timestamp
             ))
         }
 
-        // Add distanceCycling sample for the batch
-        if totalDistanceMeters > 0 {
+        let (meters, _) = WorkoutSampleAggregator.integrateDistance(in: samples, startingFrom: nil)
+        if meters > 0 {
             hkSamples.append(HKQuantitySample(
                 type: HKQuantityType(.distanceCycling),
-                quantity: HKQuantity(unit: .meter(), doubleValue: totalDistanceMeters),
+                quantity: HKQuantity(unit: .meter(), doubleValue: meters),
                 start: samples.first!.timestamp,
                 end: samples.last!.timestamp
             ))

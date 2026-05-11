@@ -48,7 +48,6 @@ enum HeartRateZone: Int, CaseIterable, Identifiable {
     static func zone(forBPM bpm: Int, maxHR: Int) -> HeartRateZone? {
         guard maxHR > 0 && bpm >= 0 else { return nil }
         let pct = Double(bpm) / Double(maxHR)
-        if pct < 0.50 { return .zone1 }
         if pct < 0.60 { return .zone1 }
         if pct < 0.70 { return .zone2 }
         if pct < 0.80 { return .zone3 }
