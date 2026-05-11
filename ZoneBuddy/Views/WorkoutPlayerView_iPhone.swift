@@ -70,10 +70,15 @@ struct WorkoutPlayerView_iPhone: View {
                     (isLandscape ? AnyView(landscapeActiveWorkoutPage) : AnyView(activeWorkoutPage))
                         .tag(0)
 
-                    metricsPage
-                        .tag(1)
+                    if isBikeConnected {
+                        metricsPage
+                            .tag(1)
+                    }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
+                .onChange(of: isBikeConnected) { _, connected in
+                    if !connected { selectedPage = 0 }
+                }
             }
 
             // Transition banner — at the top, below the header
@@ -494,14 +499,17 @@ struct WorkoutPlayerView_iPhone: View {
         .glassEffect(.regular.interactive(), in: .circle)
     }
 
+    @ViewBuilder
     private var pageIndicator: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(fgColor.opacity(selectedPage == 0 ? 1.0 : 0.3))
-                .frame(width: 8, height: 8)
-            Circle()
-                .fill(fgColor.opacity(selectedPage == 1 ? 1.0 : 0.3))
-                .frame(width: 8, height: 8)
+        if isBikeConnected {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(fgColor.opacity(selectedPage == 0 ? 1.0 : 0.3))
+                    .frame(width: 8, height: 8)
+                Circle()
+                    .fill(fgColor.opacity(selectedPage == 1 ? 1.0 : 0.3))
+                    .frame(width: 8, height: 8)
+            }
         }
     }
 
