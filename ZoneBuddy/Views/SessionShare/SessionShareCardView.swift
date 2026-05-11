@@ -43,22 +43,26 @@ enum ShareCardComponent: String, CaseIterable, Identifiable, Codable {
 }
 
 enum ShareCardColorScheme: String, CaseIterable, Identifiable, Codable {
+    case system
     case light
     case dark
 
     var id: String { rawValue }
 
-    var swiftUI: ColorScheme {
+    /// Returns the explicit `ColorScheme` to force, or nil to inherit from the environment.
+    var swiftUI: ColorScheme? {
         switch self {
-        case .light: return .light
-        case .dark:  return .dark
+        case .system: return nil
+        case .light:  return .light
+        case .dark:   return .dark
         }
     }
 
     var label: String {
         switch self {
-        case .light: return "Light"
-        case .dark:  return "Dark"
+        case .system: return "System"
+        case .light:  return "Light"
+        case .dark:   return "Dark"
         }
     }
 }
@@ -84,7 +88,7 @@ struct SessionShareCardConfiguration: Equatable {
 
     static let `default` = SessionShareCardConfiguration(
         componentSettings: ShareCardComponent.allCases.map { ComponentSetting(component: $0, isEnabled: true) },
-        colorScheme: .light,
+        colorScheme: .system,
         showZoneBar: true,
         showBranding: true
     )
@@ -131,7 +135,7 @@ extension SessionShareCardConfiguration: Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let wrappers = (try? container.decode([TolerantDecode<ComponentSetting>].self, forKey: .componentSettings)) ?? []
         self.componentSettings = wrappers.compactMap(\.value)
-        self.colorScheme = (try? container.decode(ShareCardColorScheme.self, forKey: .colorScheme)) ?? .light
+        self.colorScheme = (try? container.decode(ShareCardColorScheme.self, forKey: .colorScheme)) ?? .system
         self.showZoneBar = (try? container.decode(Bool.self, forKey: .showZoneBar)) ?? true
         self.showBranding = (try? container.decode(Bool.self, forKey: .showBranding)) ?? true
     }
@@ -196,7 +200,7 @@ struct SessionShareCardView: View {
         }
         .frame(width: Self.canvasSize, height: Self.canvasSize)
         .background(Color(uiColor: .systemBackground))
-        .environment(\.colorScheme, configuration.colorScheme.swiftUI)
+        .applyingColorScheme(configuration.colorScheme.swiftUI)
     }
 
     // MARK: Background
@@ -308,13 +312,13 @@ struct SessionShareCardView: View {
                 ? String(format: "%.1f", meters / 1000.0)
                 : String(format: "%.1f", meters / 1609.344)
             let unit = Self.usesMetric ? "km" : "mi"
-            return MetricItem(component: component, label: component.shortLabel, value: value, unit: unit, icon: nil, accent: nil)
+            return MetricItem(component: component, label: component.shortLabel, value: value, unit: unit, icon: "road.lanes", accent: .blue)
         case .avgPower:
             guard let v = session.avgPower else { return nil }
-            return MetricItem(component: component, label: component.shortLabel, value: "\(v)", unit: "W", icon: nil, accent: nil)
+            return MetricItem(component: component, label: component.shortLabel, value: "\(v)", unit: "W", icon: "bolt.fill", accent: .yellow)
         case .totalOutput:
             guard let kj = session.totalOutputKJ, kj > 0 else { return nil }
-            return MetricItem(component: component, label: component.shortLabel, value: String(format: "%.0f", kj), unit: "kJ", icon: nil, accent: nil)
+            return MetricItem(component: component, label: component.shortLabel, value: String(format: "%.0f", kj), unit: "kJ", icon: "sum", accent: .purple)
         case .zoneAdherence:
             let scheduled = session.scheduledSecondsByZone.values.reduce(0, +)
             let onTarget = session.onTargetSecondsByZone.values.reduce(0, +)
@@ -411,10 +415,17 @@ private struct MetricCardCompact: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(item.label)
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
-                .tracking(0.6)
-                .foregroundStyle(.secondary)
+            HStack(spacing: 6) {
+                if let icon = item.icon {
+                    Image(systemName: icon)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(item.accent ?? .secondary)
+                }
+                Text(item.label)
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .tracking(0.6)
+                    .foregroundStyle(.secondary)
+            }
             HStack(alignment: .lastTextBaseline, spacing: 4) {
                 Text(item.value)
                     .font(.system(size: 40, weight: .semibold, design: .rounded))
@@ -445,6 +456,16 @@ private extension View {
             .overlay {
                 shape.stroke(Color.primary.opacity(0.18), lineWidth: 1.5)
             }
+    }
+
+    /// Applies an explicit `ColorScheme` override, or inherits the environment value when nil.
+    @ViewBuilder
+    func applyingColorScheme(_ scheme: ColorScheme?) -> some View {
+        if let scheme {
+            self.environment(\.colorScheme, scheme)
+        } else {
+            self
+        }
     }
 }
 

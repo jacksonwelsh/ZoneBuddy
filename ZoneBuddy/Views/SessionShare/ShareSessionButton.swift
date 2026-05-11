@@ -43,6 +43,7 @@ private enum ShareCardPreferencesStore {
 private struct SessionSharePreviewSheet: View {
     let session: WorkoutSession
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var systemColorScheme
 
     @State private var configuration: SessionShareCardConfiguration = ShareCardPreferencesStore.load()
     @State private var renderedImage: Image?
@@ -103,6 +104,9 @@ private struct SessionSharePreviewSheet: View {
                 ShareCardPreferencesStore.save(configuration)
                 renderImage()
             }
+            .onChange(of: systemColorScheme) { _, _ in
+                renderImage()
+            }
         }
         .presentationDetents([.large])
     }
@@ -129,7 +133,11 @@ private struct SessionSharePreviewSheet: View {
     }
 
     private func renderImage() {
+        // ImageRenderer doesn't inherit the surrounding environment's colorScheme, so
+        // resolve "system" to the current device scheme before handing the view off.
+        let resolvedScheme = configuration.colorScheme.swiftUI ?? systemColorScheme
         let view = SessionShareCardView(session: session, configuration: configuration)
+            .environment(\.colorScheme, resolvedScheme)
         let renderer = ImageRenderer(content: view)
         renderer.proposedSize = ProposedViewSize(width: 1080, height: 1080)
         renderer.scale = 1.0
