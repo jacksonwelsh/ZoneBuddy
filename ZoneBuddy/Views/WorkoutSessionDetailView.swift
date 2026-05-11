@@ -32,17 +32,6 @@ struct WorkoutSessionDetailView: View {
                 powerZoneSection
                 hrZoneSection
 
-                if case .completion(let onDone) = mode {
-                    Button(action: onDone) {
-                        Text("Done")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 6)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .padding(.top, 8)
-                }
             }
             .padding()
         }
@@ -52,7 +41,16 @@ struct WorkoutSessionDetailView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 ShareSessionButton(session: session)
             }
-            if !isCompletion {
+            if case .completion(let onDone) = mode {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(action: onDone) {
+                        Image(systemName: "checkmark")
+                            .fontWeight(.semibold)
+                    }
+                    .accessibilityLabel("Done")
+                    .accessibilityHint("Dismisses the workout summary")
+                }
+            } else {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(role: .destructive) {
                         showDeleteConfirm = true
@@ -110,8 +108,8 @@ struct WorkoutSessionDetailView: View {
                         )
                     )
                     .frame(width: 110, height: 110)
-                Image(systemName: "checkmark.seal.fill")
-                    .font(.system(size: 64, weight: .semibold))
+                Image(systemName: "flag.checkered")
+                    .font(.system(size: 60, weight: .semibold))
                     .foregroundStyle(primaryZone)
                     .symbolEffect(.bounce, options: .nonRepeating)
             }
