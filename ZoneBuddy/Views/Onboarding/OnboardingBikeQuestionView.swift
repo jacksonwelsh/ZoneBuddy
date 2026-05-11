@@ -60,6 +60,7 @@ struct OnboardingBikeQuestionView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
             .frame(maxWidth: .infinity)
+            .contentShape(.rect(cornerRadius: 14))
         }
         .buttonStyle(.plain)
         .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 14))

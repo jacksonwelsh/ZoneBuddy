@@ -69,6 +69,7 @@ struct OnboardingPrimaryButton: View {
                 .foregroundStyle(isEnabled ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
+                .contentShape(.capsule)
         }
         .buttonStyle(.plain)
         .glassEffect(.regular.interactive(), in: .capsule)
@@ -88,6 +89,7 @@ struct OnboardingSecondaryButton: View {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
+                .contentShape(.rect)
         }
         .buttonStyle(.plain)
     }

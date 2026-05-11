@@ -34,6 +34,7 @@ struct OnboardingFlowView: View {
                     .font(.body.weight(.semibold))
                     .foregroundStyle(viewModel.canGoBack ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
                     .frame(width: 36, height: 36)
+                    .contentShape(.rect)
             }
             .buttonStyle(.plain)
             .disabled(!viewModel.canGoBack)

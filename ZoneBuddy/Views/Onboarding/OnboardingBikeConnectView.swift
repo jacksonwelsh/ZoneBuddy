@@ -94,6 +94,7 @@ struct OnboardingBikeConnectView: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 12)
                     .frame(maxWidth: .infinity)
+                    .contentShape(.rect(cornerRadius: 12))
                 }
                 .buttonStyle(.plain)
                 .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 12))

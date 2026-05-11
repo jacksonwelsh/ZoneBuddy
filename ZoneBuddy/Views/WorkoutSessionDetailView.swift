@@ -42,11 +42,14 @@ struct WorkoutSessionDetailView: View {
                 ShareSessionButton(session: session)
             }
             if case .completion(let onDone) = mode {
+                ToolbarSpacer(.fixed, placement: .topBarTrailing)
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(action: onDone) {
                         Image(systemName: "checkmark")
                             .fontWeight(.semibold)
                     }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.blue)
                     .accessibilityLabel("Done")
                     .accessibilityHint("Dismisses the workout summary")
                 }
