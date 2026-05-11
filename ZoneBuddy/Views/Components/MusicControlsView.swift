@@ -14,33 +14,35 @@ struct MusicControlsView: View {
     private var iconSize: CGFloat { compact ? 16 : 20 }
 
     var body: some View {
-        if compact {
-            controlButtons
-        } else {
-            HStack(spacing: 16) {
-                if let entry = queue.currentEntry {
-                    HStack(spacing: 12) {
-                        if let artwork = entry.artwork {
-                            ArtworkImage(artwork, width: 44, height: 44)
-                                .clipShape(RoundedRectangle(cornerRadius: 6))
-                        }
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(entry.title)
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                                .foregroundStyle(foregroundColor)
-                                .lineLimit(1)
-                            if let subtitle = entry.subtitle {
-                                Text(subtitle)
-                                    .font(.caption)
-                                    .foregroundStyle(foregroundColor.opacity(0.7))
+        if musicManager != nil {
+            if compact {
+                controlButtons
+            } else {
+                HStack(spacing: 16) {
+                    if let entry = queue.currentEntry {
+                        HStack(spacing: 12) {
+                            if let artwork = entry.artwork {
+                                ArtworkImage(artwork, width: 44, height: 44)
+                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(entry.title)
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                    .foregroundStyle(foregroundColor)
                                     .lineLimit(1)
+                                if let subtitle = entry.subtitle {
+                                    Text(subtitle)
+                                        .font(.caption)
+                                        .foregroundStyle(foregroundColor.opacity(0.7))
+                                        .lineLimit(1)
+                                }
                             }
                         }
                     }
+                    Spacer()
+                    controlButtons
                 }
-                Spacer()
-                controlButtons
             }
         }
     }
@@ -87,7 +89,5 @@ struct MusicControlsView: View {
             .buttonStyle(.plain)
             .glassEffect(.regular.interactive(), in: .circle)
         }
-        .disabled(musicManager == nil)
-        .opacity(musicManager == nil ? 0.4 : 1.0)
     }
 }

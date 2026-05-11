@@ -2,19 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>NSSupportsLiveActivitiesFrequentUpdates</key>
-	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
 		<string>bluetooth-central</string>
 		<string>bluetooth-peripheral</string>
-		<string>remote-notification</string>
 	</array>
-	<key>ZoneBuddyAPISecret</key>
-	<string>$(ZONEBUDDY_API_SECRET)</string>
-	<key>ZoneBuddyDevServerURL</key>
-	<string>$(ZONEBUDDY_DEV_SERVER_URL)</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>ZoneBuddy connects to your FTMS-compatible bike and receives heart rate from your Apple Watch during workouts.</string>
 	<key>NSHealthShareUsageDescription</key>

@@ -98,12 +98,12 @@ struct WorkoutPlayerView: View {
                     BLEHeartRateScanner.shared.sendEndCommand()
                 }
                 viewModel.pause()
-                viewModel.endActivity()
+                viewModel.endWorkout()
                 dismiss()
             }
         }
         .navigationBarBackButtonHidden(true)
-        .toolbar(.hidden, for: .navigationBar)
+        .toolbar(viewModel.isFinished ? .visible : .hidden, for: .navigationBar)
         .toolbar(.hidden, for: .tabBar)
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
@@ -151,7 +151,7 @@ struct WorkoutPlayerView: View {
                 // for the user to dismiss manually.
                 guard !viewModel.isFinished else { return }
                 viewModel.pause()
-                viewModel.endActivity()
+                viewModel.endWorkout()
                 dismiss()
             }
         }
@@ -184,7 +184,7 @@ struct WorkoutPlayerView: View {
                 BLEHeartRateScanner.shared.resetWatchEndedWorkout()
                 guard !viewModel.isFinished else { return }
                 viewModel.pause()
-                viewModel.endActivity()
+                viewModel.endWorkout()
                 dismiss()
             }
         }

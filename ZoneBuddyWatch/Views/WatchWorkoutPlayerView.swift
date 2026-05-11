@@ -17,7 +17,6 @@ struct WatchWorkoutPlayerView: View {
         _viewModel = State(initialValue: WorkoutPlayerViewModel(
             intervals: workout.sortedIntervals,
             timerProvider: LiveTimerProvider(),
-            activityManager: NoOpActivityManager(),
             speechCueProvider: WatchSpeechCueProvider(),
             workoutName: workout.name,
             templateID: workout.id,
@@ -42,7 +41,6 @@ struct WatchWorkoutPlayerView: View {
         _viewModel = State(initialValue: WorkoutPlayerViewModel(
             intervals: intervals,
             timerProvider: LiveTimerProvider(),
-            activityManager: NoOpActivityManager(),
             speechCueProvider: WatchSpeechCueProvider(),
             workoutName: transferData.name,
             transitionWarningDuration: transferData.transitionWarningDuration,
@@ -112,7 +110,7 @@ struct WatchWorkoutPlayerView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .watchReceivedDismiss)) { _ in
             viewModel.pause()
-            viewModel.endActivity()
+            viewModel.endWorkout()
             viewModel.stopBackgroundKeepAlive()
             dismiss()
         }
@@ -229,7 +227,7 @@ struct WatchWorkoutPlayerView: View {
         .confirmationDialog("End Workout?", isPresented: $showExitConfirm) {
             Button("End Workout", role: .destructive) {
                 viewModel.pause()
-                viewModel.endActivity()
+                viewModel.endWorkout()
                 viewModel.stopBackgroundKeepAlive()
                 dismiss()
             }

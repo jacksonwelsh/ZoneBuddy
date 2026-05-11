@@ -102,7 +102,7 @@ struct WorkoutPlayerView_iPad: View {
                 }
 
                 // Edge glow — same as iPhone, device corner radius auto-detected
-                if isBikeConnected {
+                if isBikeConnected && !isFTPTest {
                     EdgeGlowView(
                         actualZone: viewModel.actualPowerZone,
                         targetZone: viewModel.currentInterval?.zone,
@@ -379,7 +379,7 @@ struct WorkoutPlayerView_iPad: View {
 
     @ViewBuilder
     private var bottomSection: some View {
-        if settings.layoutPreferences.showMusicControls {
+        if settings.layoutPreferences.showMusicControls, viewModel.musicPlaybackManager != nil {
             DataTile(isVisible: true) {
                 MusicControlsView(
                     musicManager: viewModel.musicPlaybackManager,
@@ -400,20 +400,18 @@ struct WorkoutPlayerView_iPad: View {
                 avgPower: viewModel.ftpTestAvgPower,
                 computedFTP: viewModel.computedFTPFromTest,
                 onDone: {
-                    viewModel.endActivity()
+                    viewModel.endWorkout()
                     dismiss()
                 }
             )
         } else if let session = viewModel.savedSession {
-            NavigationStack {
-                WorkoutSessionDetailView(
-                    session: session,
-                    mode: .completion(onDone: {
-                        viewModel.endActivity()
-                        dismiss()
-                    })
-                )
-            }
+            WorkoutSessionDetailView(
+                session: session,
+                mode: .completion(onDone: {
+                    viewModel.endWorkout()
+                    dismiss()
+                })
+            )
         } else {
             VStack(spacing: 24) {
                 Image(systemName: "checkmark.seal.fill")
@@ -425,7 +423,7 @@ struct WorkoutPlayerView_iPad: View {
                     .font(.system(size: 48, weight: .bold, design: .rounded))
                     .monospacedDigit()
                 Button("Done") {
-                    viewModel.endActivity()
+                    viewModel.endWorkout()
                     dismiss()
                 }
                 .buttonStyle(.borderedProminent)

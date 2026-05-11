@@ -16,7 +16,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "647174902F41566300CD86C8"
-               BuildableName = "ZoneBuddyLiveActivityExtension.appex"
+               BuildableName = "ZoneBuddyLiveActivityExtension"
                BlueprintName = "ZoneBuddyLiveActivityExtension"
                ReferencedContainer = "container:ZoneBuddy.xcodeproj">
             </BuildableReference>

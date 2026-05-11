@@ -120,7 +120,7 @@ final class WorkoutPlayerViewModel {
     }
 
     var isPaused: Bool {
-        !isRunning && activityHasStarted && !isFinished
+        !isRunning && workoutHasStarted && !isFinished
     }
 
     // MARK: - FTP & Power Zone Computed Properties
@@ -225,7 +225,6 @@ final class WorkoutPlayerViewModel {
 
     let intervals: [Interval]
     private let timerProvider: TimerProviding
-    private let activityManager: ActivityManaging?
     private let speechCueProvider: SpeechCueProviding?
     let musicPlaybackManager: MusicPlaybackManaging?
     let workoutName: String
@@ -260,30 +259,15 @@ final class WorkoutPlayerViewModel {
     private var lastSpeedSampleDate: Date?
 
     private var timerTask: Task<Void, Never>?
-    private var pushTokenPollTask: Task<Void, Never>?
     private var workoutStartDate: Date?
     private var totalSecondsAccumulatedBeforePause: TimeInterval = 0
-    private var activityHasStarted: Bool = false
-    private var serverWorkoutId: String?
-
-    private static let apiSecret: String =
-        Bundle.main.infoDictionary?["ZoneBuddyAPISecret"] as? String ?? ""
-
-    #if DEBUG
-    private static let serverBaseURL: String = {
-        let url = Bundle.main.infoDictionary?["ZoneBuddyDevServerURL"] as? String ?? ""
-        return url.isEmpty ? "http://localhost:8787/api" : url
-    }()
-    #else
-    private static let serverBaseURL = "https://zonebuddy.jacksn.dev/api"
-    #endif
+    private var workoutHasStarted: Bool = false
 
     // MARK: - Init
 
     init(
         intervals: [Interval],
         timerProvider: TimerProviding,
-        activityManager: ActivityManaging? = nil,
         speechCueProvider: SpeechCueProviding? = nil,
         workoutName: String = "",
         templateID: UUID? = nil,
@@ -303,7 +287,6 @@ final class WorkoutPlayerViewModel {
     ) {
         self.intervals = intervals
         self.timerProvider = timerProvider
-        self.activityManager = activityManager
         self.speechCueProvider = speechCueProvider
         self.musicPlaybackManager = musicPlaybackManager
         self.workoutName = workoutName
@@ -327,7 +310,6 @@ final class WorkoutPlayerViewModel {
 
     deinit {
         timerTask?.cancel()
-        pushTokenPollTask?.cancel()
         healthKitFlushTask?.cancel()
         speechCueProvider?.stop()
         heartRateStreamer?.stopMonitoring()
@@ -338,7 +320,7 @@ final class WorkoutPlayerViewModel {
     func start(atElapsedSeconds elapsed: Int = 0) {
         guard !isRunning && !isFinished && !intervals.isEmpty else { return }
 
-        if elapsed > 0 && !activityHasStarted {
+        if elapsed > 0 && !workoutHasStarted {
             totalSecondsAccumulatedBeforePause = TimeInterval(elapsed)
             recalculateIntervalState(totalElapsed: TimeInterval(elapsed))
             totalElapsedSeconds = elapsed
@@ -348,14 +330,8 @@ final class WorkoutPlayerViewModel {
         workoutStartDate = dateProvider()
         isRunning = true
 
-        if !activityHasStarted {
-            activityHasStarted = true
-            activityManager?.startActivity(
-                workoutName: workoutName,
-                totalIntervals: intervals.count,
-                state: makeActivityState()
-            )
-            pollForPushTokenAndRegister()
+        if !workoutHasStarted {
+            workoutHasStarted = true
             startMusicPlayback()
             speakCurrentLabel(delay: musicPlaybackManager != nil)
             startHealthKitAndHeartRate()
@@ -370,8 +346,6 @@ final class WorkoutPlayerViewModel {
             }
             #endif
             healthKitManager?.resumeWorkout()
-            activityManager?.updateActivity(state: makeActivityState())
-            reregisterAfterPause()
             musicPlaybackManager?.resumePlayback()
         }
 
@@ -391,14 +365,6 @@ final class WorkoutPlayerViewModel {
                 self.recalculateIntervalState(totalElapsed: totalElapsed)
 
                 if self.isFinished {
-                    self.activityManager?.endActivity(
-                        state: self.makeActivityState(),
-                        dismissalBehavior: .afterDelay(120)
-                    )
-                    self.pushTokenPollTask?.cancel()
-                    self.pushTokenPollTask = nil
-                    // Server sends its own end push; cancel to avoid duplicates
-                    self.cancelServerWorkout()
                     stopWorkout()
                     self.finishHealthKitWorkout()
                     break
@@ -437,7 +403,6 @@ final class WorkoutPlayerViewModel {
 
                 if self.currentIntervalIndex != previousIndex {
                     self.speakCurrentLabel()
-                    self.activityManager?.updateActivity(state: self.makeActivityState())
                     self.handleFTPTestIntervalTransition(from: previousIndex, to: self.currentIntervalIndex)
                 }
             }
@@ -466,16 +431,7 @@ final class WorkoutPlayerViewModel {
         #endif
         healthKitManager?.pauseWorkout()
 
-        // Stop polling and cancel the server-side workout so it stops sending pushes.
-        pushTokenPollTask?.cancel()
-        pushTokenPollTask = nil
-        cancelServerWorkout()
-
         musicPlaybackManager?.pausePlayback()
-
-        if activityHasStarted {
-            activityManager?.updateActivity(state: makeActivityState())
-        }
     }
 
     func resume() {
@@ -514,16 +470,11 @@ final class WorkoutPlayerViewModel {
         let totalElapsed = segmentElapsed + totalSecondsAccumulatedBeforePause
         totalElapsedSeconds = Int(totalElapsed)
         recalculateIntervalState(totalElapsed: totalElapsed)
-        activityManager?.updateActivity(state: makeActivityState())
     }
 
-    func endActivity() {
-        guard activityHasStarted else { return }
-        activityManager?.endActivity(state: makeActivityState(), dismissalBehavior: .immediate)
-        activityHasStarted = false
-        pushTokenPollTask?.cancel()
-        pushTokenPollTask = nil
-        cancelServerWorkout()
+    func endWorkout() {
+        guard workoutHasStarted else { return }
+        workoutHasStarted = false
         stopWorkout()
         finishHealthKitWorkout()
     }
@@ -543,29 +494,13 @@ final class WorkoutPlayerViewModel {
         }
     }
 
-    // MARK: - Activity State
-
-    private func makeActivityState() -> WorkoutActivityState {
-        WorkoutActivityState(
-            currentZoneRawValue: currentInterval?.zone?.rawValue,
-            currentLabel: currentLabel,
-            currentIntervalIndex: currentIntervalIndex,
-            nextZoneRawValue: nextInterval?.zone?.rawValue,
-            upcomingLabel: upcomingLabel,
-            intervalStartDate: isRunning ? dateProvider().addingTimeInterval(TimeInterval(secondsRemaining - (currentInterval?.duration ?? 0))) : nil,
-            intervalEndDate: isRunning ? dateProvider().addingTimeInterval(TimeInterval(secondsRemaining)) : nil,
-            secondsRemaining: secondsRemaining,
-            intervalProgress: intervalProgress,
-            isRunning: isRunning,
-            isFinished: isFinished
-        )
-    }
-
     private func speakCurrentLabel(delay: Bool = false) {
         guard audioCuesEnabled else { return }
         guard let interval = currentInterval else { return }
         let spokenLabel: String
-        if isLastInterval && interval.zone == .zone1 {
+        if ftpTestIntervalIndex != nil {
+            spokenLabel = FTPTestProtocol.phaseLabel(forIndex: currentIntervalIndex)
+        } else if isLastInterval && interval.zone == .zone1 {
             spokenLabel = "Cooldown"
         } else {
             spokenLabel = interval.spokenLabel
@@ -620,226 +555,6 @@ final class WorkoutPlayerViewModel {
         isFinished = true
         isRunning = false
         secondsRemaining = 0
-    }
-
-    // MARK: - Server Communication
-
-    private func reregisterAfterPause() {
-        // Capture paused state synchronously before the async task can observe a tick.
-        let fromIndex = currentIntervalIndex
-        let pausedSecondsRemaining = secondsRemaining
-        let startTime = dateProvider().timeIntervalSince1970
-
-        pushTokenPollTask?.cancel()
-        pushTokenPollTask = Task { @MainActor in
-            // The Live Activity is already running so the token should be available immediately.
-            var registeredToken: String? = nil
-            for _ in 0..<10 {
-                if Task.isCancelled { return }
-                if let token = activityManager?.pushTokenHex {
-                    await registerResumedWorkout(
-                        pushToken: token,
-                        fromIndex: fromIndex,
-                        adjustedFirstDuration: pausedSecondsRemaining,
-                        startTime: startTime
-                    )
-                    registeredToken = token
-                    break
-                }
-                try? await Task.sleep(for: .seconds(1))
-            }
-
-            guard registeredToken != nil else {
-                print("Push token unavailable after resume — no server pushes will fire")
-                return
-            }
-
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(30))
-                if Task.isCancelled { return }
-                if let token = activityManager?.pushTokenHex, token != registeredToken {
-                    await updateTokenWithServer(pushToken: token)
-                    registeredToken = token
-                }
-            }
-        }
-    }
-
-    private func registerResumedWorkout(
-        pushToken: String,
-        fromIndex: Int,
-        adjustedFirstDuration: Int,
-        startTime: TimeInterval
-    ) async {
-        let remaining = intervals[fromIndex...]
-        let intervalData: [[String: Any]] = remaining.enumerated().map { i, interval in
-            var dict: [String: Any] = [
-                "label": interval.baseLabel,
-                "duration": i == 0 ? adjustedFirstDuration : interval.duration,
-            ]
-            if let raw = interval.zoneRawValue {
-                dict["zoneRawValue"] = raw
-            }
-            return dict
-        }
-
-        let body: [String: Any] = [
-            "pushToken": pushToken,
-            "intervals": intervalData,
-            "totalIntervals": intervals.count,
-            "workoutName": workoutName,
-            "startTime": startTime,
-            "startIndex": fromIndex,
-        ]
-
-        guard let url = URL(string: "\(Self.serverBaseURL)/workouts"),
-              let jsonData = try? JSONSerialization.data(withJSONObject: body) else { return }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(Self.apiSecret)", forHTTPHeaderField: "Authorization")
-        request.httpBody = jsonData
-
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let httpResponse = response as? HTTPURLResponse,
-                  httpResponse.statusCode == 200,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let workoutId = json["workoutId"] as? String else {
-                print("Server re-registration after pause failed")
-                return
-            }
-            self.serverWorkoutId = workoutId
-            print("Re-registered workout after pause: \(workoutId) (from interval \(fromIndex))")
-        } catch {
-            print("Failed to re-register after pause: \(error)")
-        }
-    }
-
-    private func pollForPushTokenAndRegister() {
-        print("Server URL: \(Self.serverBaseURL)")
-        pushTokenPollTask?.cancel()
-        pushTokenPollTask = Task { @MainActor in
-            // Initial registration: poll until token is available (up to 30s)
-            var registeredToken: String? = nil
-            for _ in 0..<30 {
-                if Task.isCancelled { return }
-                if let token = activityManager?.pushTokenHex {
-                    await registerWithServer(pushToken: token)
-                    registeredToken = token
-                    break
-                }
-                try? await Task.sleep(for: .seconds(1))
-            }
-
-            guard registeredToken != nil else {
-                print("Push token not received within timeout")
-                return
-            }
-
-            // Token rotation: continue checking every 30s for a new token
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(30))
-                if Task.isCancelled { return }
-                if let token = activityManager?.pushTokenHex, token != registeredToken {
-                    await updateTokenWithServer(pushToken: token)
-                    registeredToken = token
-                }
-            }
-        }
-    }
-
-    private func registerWithServer(pushToken: String) async {
-        guard let startDate = workoutStartDate else { return }
-
-        let intervalData: [[String: Any]] = intervals.map { interval in
-            var dict: [String: Any] = [
-                "label": interval.baseLabel,
-                "duration": interval.duration,
-            ]
-            if let raw = interval.zoneRawValue {
-                dict["zoneRawValue"] = raw
-            }
-            return dict
-        }
-
-        let body: [String: Any] = [
-            "pushToken": pushToken,
-            "intervals": intervalData,
-            "totalIntervals": intervals.count,
-            "workoutName": workoutName,
-            "startTime": startDate.timeIntervalSince1970,
-        ]
-
-        guard let url = URL(string: "\(Self.serverBaseURL)/workouts"),
-              let jsonData = try? JSONSerialization.data(withJSONObject: body) else { return }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(Self.apiSecret)", forHTTPHeaderField: "Authorization")
-        request.httpBody = jsonData
-
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let httpResponse = response as? HTTPURLResponse,
-                  httpResponse.statusCode == 200,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let workoutId = json["workoutId"] as? String else {
-                print("Server registration failed")
-                return
-            }
-            self.serverWorkoutId = workoutId
-            print("Registered workout with server: \(workoutId)")
-        } catch {
-            print("Failed to register with server: \(error)")
-        }
-    }
-
-    private func updateTokenWithServer(pushToken: String) async {
-        guard let workoutId = serverWorkoutId else { return }
-
-        let body: [String: Any] = ["pushToken": pushToken]
-        guard let url = URL(string: "\(Self.serverBaseURL)/workouts/\(workoutId)/token"),
-              let jsonData = try? JSONSerialization.data(withJSONObject: body) else { return }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "PATCH"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(Self.apiSecret)", forHTTPHeaderField: "Authorization")
-        request.httpBody = jsonData
-
-        do {
-            let (_, response) = try await URLSession.shared.data(for: request)
-            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
-                print("Updated push token on server for workout: \(workoutId)")
-            }
-        } catch {
-            print("Failed to update token on server: \(error)")
-        }
-    }
-
-    private func cancelServerWorkout() {
-        guard let workoutId = serverWorkoutId else { return }
-        serverWorkoutId = nil
-
-        guard let url = URL(string: "\(Self.serverBaseURL)/workouts/\(workoutId)") else { return }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "DELETE"
-        request.setValue("Bearer \(Self.apiSecret)", forHTTPHeaderField: "Authorization")
-
-        Task.detached {
-            do {
-                let (_, response) = try await URLSession.shared.data(for: request)
-                if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
-                    print("Cancelled server workout: \(workoutId)")
-                }
-            } catch {
-                print("Failed to cancel server workout: \(error)")
-            }
-        }
     }
 
     // MARK: - HealthKit Integration

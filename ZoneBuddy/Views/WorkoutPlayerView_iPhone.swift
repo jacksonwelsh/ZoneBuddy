@@ -53,11 +53,13 @@ struct WorkoutPlayerView_iPhone: View {
                 if isBikeConnected {
                     Color.black.ignoresSafeArea()
 
-                    EdgeGlowView(
-                        actualZone: viewModel.actualPowerZone,
-                        targetZone: viewModel.currentInterval?.zone,
-                        intensity: 1.0
-                    )
+                    if !isFTPTest {
+                        EdgeGlowView(
+                            actualZone: viewModel.actualPowerZone,
+                            targetZone: viewModel.currentInterval?.zone,
+                            intensity: 1.0
+                        )
+                    }
                 } else {
                     viewModel.currentZoneColor
                         .ignoresSafeArea()
@@ -510,20 +512,18 @@ struct WorkoutPlayerView_iPhone: View {
                 avgPower: viewModel.ftpTestAvgPower,
                 computedFTP: viewModel.computedFTPFromTest,
                 onDone: {
-                    viewModel.endActivity()
+                    viewModel.endWorkout()
                     dismiss()
                 }
             )
         } else if let session = viewModel.savedSession {
-            NavigationStack {
-                WorkoutSessionDetailView(
-                    session: session,
-                    mode: .completion(onDone: {
-                        viewModel.endActivity()
-                        dismiss()
-                    })
-                )
-            }
+            WorkoutSessionDetailView(
+                session: session,
+                mode: .completion(onDone: {
+                    viewModel.endWorkout()
+                    dismiss()
+                })
+            )
         } else {
             // Fallback: session save failed but workout is finished
             VStack(spacing: 24) {
@@ -536,7 +536,7 @@ struct WorkoutPlayerView_iPhone: View {
                     .font(.system(size: 40, weight: .bold, design: .rounded))
                     .monospacedDigit()
                 Button("Done") {
-                    viewModel.endActivity()
+                    viewModel.endWorkout()
                     dismiss()
                 }
                 .buttonStyle(.borderedProminent)
