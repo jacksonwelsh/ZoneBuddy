@@ -13,7 +13,7 @@ struct WatchWorkoutPlayerView: View {
     init(workout: Workout) {
         self.isRemote = false
         self.startedAt = nil
-        let healthKitManager = WatchHealthKitManager()
+        let (hk, hr): (HealthKitWorkoutRecording, HeartRateStreaming) = Self.makeManagers()
         _viewModel = State(initialValue: WorkoutPlayerViewModel(
             intervals: workout.sortedIntervals,
             timerProvider: LiveTimerProvider(),
@@ -22,8 +22,8 @@ struct WatchWorkoutPlayerView: View {
             workoutName: workout.name,
             templateID: workout.id,
             transitionWarningDuration: workout.transitionWarningDuration,
-            healthKitManager: healthKitManager,
-            heartRateStreamer: healthKitManager,
+            healthKitManager: hk,
+            heartRateStreamer: hr,
             shouldPersistSession: true
         ))
     }
@@ -38,8 +38,7 @@ struct WatchWorkoutPlayerView: View {
             )
         }
         self.startedAt = transferData.startedAt
-        let healthKitManager = WatchHealthKitManager()
-        healthKitManager.saveOnEnd = false
+        let (hk, hr): (HealthKitWorkoutRecording, HeartRateStreaming) = Self.makeManagers(saveOnEnd: false)
         _viewModel = State(initialValue: WorkoutPlayerViewModel(
             intervals: intervals,
             timerProvider: LiveTimerProvider(),
@@ -47,10 +46,22 @@ struct WatchWorkoutPlayerView: View {
             speechCueProvider: WatchSpeechCueProvider(),
             workoutName: transferData.name,
             transitionWarningDuration: transferData.transitionWarningDuration,
-            healthKitManager: healthKitManager,
-            heartRateStreamer: healthKitManager,
+            healthKitManager: hk,
+            heartRateStreamer: hr,
             shouldPersistSession: false
         ))
+    }
+
+    private static func makeManagers(saveOnEnd: Bool = true) -> (HealthKitWorkoutRecording, HeartRateStreaming) {
+        #if DEBUG
+        if SimulatorFakes.shared.isEnabled {
+            let fake = FakeWatchHealthKitManager()
+            return (fake, fake)
+        }
+        #endif
+        let live = WatchHealthKitManager()
+        live.saveOnEnd = saveOnEnd
+        return (live, live)
     }
 
     var body: some View {
@@ -75,14 +86,22 @@ struct WatchWorkoutPlayerView: View {
         }
         .onDisappear {
             viewModel.stopBackgroundKeepAlive()
-            WatchConnectivityManager.shared.sendWorkoutEnded()
-            WatchHRBroadcaster.shared.sendWatchEnded()
+            // Only signal the phone/iPad when the user ended this workout —
+            // a natural completion will be reached on their own clock too,
+            // and sending an end here races their completion view and dismisses it.
+            if !viewModel.isFinished {
+                WatchConnectivityManager.shared.sendWorkoutEnded()
+                WatchHRBroadcaster.shared.sendWatchEnded()
+            }
             if isRemote {
                 WatchNavigationManager.shared.reset()
             }
         }
         .onChange(of: viewModel.currentHeartRate) { _, hr in
             if let hr {
+                #if DEBUG
+                guard !SimulatorFakes.shared.isEnabled else { return }
+                #endif
                 WatchConnectivityManager.shared.sendHeartRate(hr)
                 WatchHRBroadcaster.shared.updateHeartRate(hr)
             }

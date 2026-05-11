@@ -188,3 +188,23 @@ private final class SessionDelegate: NSObject, WCSessionDelegate {
         }
     }
 }
+
+#if DEBUG
+extension WorkoutConnectivityManager {
+    func debugSimulateInboundHR(_ bpm: Int) {
+        handleReceivedMessage([ConnectivityMessage.bpmKey: bpm])
+    }
+
+    func debugSimulatePauseFromWatch() {
+        handleReceivedMessage([ConnectivityMessage.pauseWorkout: true])
+    }
+
+    func debugSimulateResumeFromWatch() {
+        handleReceivedMessage([ConnectivityMessage.resumeWorkout: true])
+    }
+
+    func debugSimulateEndFromWatch() {
+        handleReceivedMessage([ConnectivityMessage.workoutEnded: true])
+    }
+}
+#endif

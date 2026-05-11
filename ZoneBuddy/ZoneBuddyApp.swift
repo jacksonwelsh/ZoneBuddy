@@ -22,9 +22,12 @@ struct ZoneBuddyApp: App {
         SettingsManager.shared.consumeRerunFlagIfSet()
         _showOnboarding = State(initialValue: !SettingsManager.shared.hasCompletedOnboarding)
         if SettingsManager.shared.hasCompletedOnboarding {
-            LiveBikeConnectionManager.shared.autoConnect()
+            BikeManagerProvider.current.autoConnect(timeout: 8)
         }
         WorkoutConnectivityManager.shared.activate()
+#if DEBUG
+        DataStore.shared.seedRainbowWorkoutIfNeeded()
+#endif
     }
 
     var body: some Scene {
@@ -51,7 +54,7 @@ struct ZoneBuddyApp: App {
                         showFTPTestAfterOnboarding = true
                     } else {
                         // Onboarding finalized — kick off the auto-connect that we deferred.
-                        LiveBikeConnectionManager.shared.autoConnect()
+                        BikeManagerProvider.current.autoConnect(timeout: 8)
                     }
                 }
             }

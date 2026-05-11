@@ -6,7 +6,7 @@ import FTMSKit
 /// pedaling metric. Allows the user to scan/select a bike, manually reconnect to recover from
 /// the "stuck at zero" state, or skip the bike entirely.
 struct BikePromptSheet: View {
-    var bikeManager: BikeConnecting = LiveBikeConnectionManager.shared
+    var bikeManager: any BikeConnecting = BikeManagerProvider.current
     /// When true, the user cannot Skip — they must connect a bike that's reporting non-zero
     /// metrics before Start is enabled. Used by FTP test where measured power is required.
     var requireBike: Bool = false

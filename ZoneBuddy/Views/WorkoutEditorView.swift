@@ -113,7 +113,7 @@ struct WorkoutEditorView: View {
             }
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    let bikeManager = LiveBikeConnectionManager.shared
+                    let bikeManager = BikeManagerProvider.current
                     let promptEnabled = SettingsManager.shared.promptForBikeBeforeWorkout
                     let bikeReady = bikeManager.isConnected && bikeManager.hasReceivedNonZeroMetric
                     if promptEnabled && !bikeReady {

@@ -2,7 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @Bindable var settings = SettingsManager.shared
-    var bikeManager: BikeConnecting = LiveBikeConnectionManager.shared
+    var bikeManager: any BikeConnecting = BikeManagerProvider.current
     @State private var ftpText: String = ""
     @State private var maxHRText: String = ""
 
@@ -102,6 +102,9 @@ struct SettingsView: View {
                     }
                 }
 
+                #if DEBUG
+                SimulatorDebugView()
+                #endif
             }
             .listStyle(.insetGrouped)
             .navigationTitle("Settings")

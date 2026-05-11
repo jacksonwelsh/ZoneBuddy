@@ -8,7 +8,6 @@ enum WatchPlayerDestination: Hashable {
 
 struct WatchWorkoutLibraryView: View {
     @Query(sort: \Workout.sortOrder) private var workouts: [Workout]
-    @State private var showSettings = false
     @State private var navigationPath = NavigationPath()
     @Environment(\.scenePhase) private var scenePhase
 
@@ -42,16 +41,6 @@ struct WatchWorkoutLibraryView: View {
                     }
                 }
             }
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button(action: { showSettings = true }) {
-                        Image(systemName: "gear")
-                    }
-                }
-            }
-        }
-        .sheet(isPresented: $showSettings) {
-            WatchSettingsView()
         }
         .onChange(of: WatchNavigationManager.shared.shouldStartWorkout) { _, shouldStart in
             if shouldStart {

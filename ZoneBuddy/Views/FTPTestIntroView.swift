@@ -5,7 +5,7 @@ import SwiftUI
 /// mode) so the user must confirm a bike that's reporting non-zero metrics before the
 /// workout starts.
 struct FTPTestIntroView: View {
-    var bikeManager: BikeConnecting = LiveBikeConnectionManager.shared
+    var bikeManager: any BikeConnecting = BikeManagerProvider.current
 
     @State private var showingBikePrompt = false
     @State private var showingPlayer = false

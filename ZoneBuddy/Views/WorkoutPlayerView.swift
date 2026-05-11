@@ -48,13 +48,12 @@ struct WorkoutPlayerView: View {
             return
         }
 
-        let resolvedBike = bikeManager ?? LiveBikeConnectionManager.shared
+        let resolvedBike = bikeManager ?? BikeManagerProvider.current
         let musicManager: MusicPlaybackManaging? = playlistID != nil ? MusicPlaybackManager() : nil
-        let hrStreamer: HeartRateStreaming? = WCSession.isSupported()
-            ? WatchHeartRateRelay()
-            : BLEHeartRateScanner.shared
+        let hrStreamer: HeartRateStreaming? = HeartRateStreamerProvider.makeFakeIfEnabled()
+            ?? (WCSession.isSupported() ? WatchHeartRateRelay() : BLEHeartRateScanner.shared)
         let hasBike = resolvedBike.isConnected
-        let healthKit: HealthKitWorkoutRecording? = (hasBike || hrStreamer != nil) ? LiveHealthKitWorkoutManager() : nil
+        let healthKit: HealthKitWorkoutRecording? = (hasBike || hrStreamer != nil) ? HealthKitWorkoutProvider.make() : nil
         _viewModel = State(initialValue: WorkoutPlayerViewModel(
             intervals: intervals,
             timerProvider: LiveTimerProvider(),

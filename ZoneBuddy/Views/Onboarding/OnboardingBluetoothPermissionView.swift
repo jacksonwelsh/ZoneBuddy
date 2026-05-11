@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct OnboardingBluetoothPermissionView: View {
-    var bikeManager: BikeConnecting = LiveBikeConnectionManager.shared
+    var bikeManager: any BikeConnecting = BikeManagerProvider.current
     let onContinue: () -> Void
 
     var body: some View {

@@ -242,3 +242,23 @@ enum BLECommand {
     static let resumeWorkout: UInt8 = 0x03
     static let endWorkout: UInt8 = 0x04
 }
+
+#if DEBUG
+extension BLEHeartRateScanner {
+    func debugSimulateInboundHR(_ bpm: Int) {
+        latestHeartRate = bpm
+    }
+
+    func debugSimulatePauseFromWatch() {
+        watchPausedWorkout = true
+    }
+
+    func debugSimulateResumeFromWatch() {
+        watchResumedWorkout = true
+    }
+
+    func debugSimulateEndFromWatch() {
+        watchEndedWorkout = true
+    }
+}
+#endif

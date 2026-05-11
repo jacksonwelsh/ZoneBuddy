@@ -2,7 +2,7 @@ import SwiftUI
 import FTMSKit
 
 struct BikeConnectionView: View {
-    var bikeManager: BikeConnecting = LiveBikeConnectionManager.shared
+    var bikeManager: any BikeConnecting = BikeManagerProvider.current
 
     var body: some View {
         List {
