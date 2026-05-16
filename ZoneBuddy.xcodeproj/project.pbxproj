@@ -88,6 +88,8 @@
 				Services/BLEProtocol.swift,
 				Services/ConnectivityMessages.swift,
 				Services/DataStore.swift,
+				Services/FTPRampTestProtocol.swift,
+				Services/FTPTestKind.swift,
 				Services/FTPTestProtocol.swift,
 				Services/HealthKitProtocols.swift,
 				Services/SettingsManager.swift,

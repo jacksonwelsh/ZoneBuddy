@@ -31,7 +31,7 @@ struct WorkoutPlayerView: View {
         playlistRepeat: Bool = false,
         playlistAutoMix: Bool = false,
         bikeManager: BikeConnecting? = nil,
-        ftpTestIntervalIndex: Int? = nil,
+        ftpTestKind: FTPTestKind? = nil,
         mode: WorkoutMode = .scheduled
     ) {
         self.workoutName = workoutName
@@ -46,7 +46,7 @@ struct WorkoutPlayerView: View {
                 workoutName: workoutName,
                 templateID: templateID,
                 transitionWarningDuration: transitionWarningDuration,
-                ftpTestIntervalIndex: ftpTestIntervalIndex,
+                ftpTestKind: ftpTestKind,
                 mode: mode
             ))
             return
@@ -74,7 +74,7 @@ struct WorkoutPlayerView: View {
             bikeManager: resolvedBike,
             healthKitManager: healthKit,
             heartRateStreamer: hrStreamer,
-            ftpTestIntervalIndex: ftpTestIntervalIndex,
+            ftpTestKind: ftpTestKind,
             sessionPersister: LiveWorkoutSessionPersister(context: DataStore.shared.context),
             mode: mode
         ))

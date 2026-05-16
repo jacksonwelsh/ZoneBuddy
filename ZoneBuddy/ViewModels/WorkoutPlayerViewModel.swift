@@ -33,15 +33,32 @@ final class WorkoutPlayerViewModel {
     private(set) var workoutSummary: WorkoutSummary?
     private(set) var savedSession: WorkoutSession?
     /// Average power held during the FTP test interval, computed at workout end.
-    /// Nil when not in FTP test mode or when no power samples were captured.
+    /// Nil when not running a 20-min FTP test or when no power samples were captured.
     private(set) var ftpTestAvgPower: Int?
+    /// Best 1-minute rolling average power observed during the ramp test window.
+    /// Nil when not running a ramp test or when fewer than 60 samples were captured.
+    private(set) var ftpTestBestMinutePower: Int?
 
     var computedFTPFromTest: Int? {
-        guard let avg = ftpTestAvgPower else { return nil }
-        return FTPTestProtocol.computeFTP(avgPower: avg)
+        guard let kind = ftpTestKind else { return nil }
+        switch kind {
+        case .twentyMinute:
+            guard let avg = ftpTestAvgPower else { return nil }
+            return FTPTestProtocol.computeFTP(avgPower: avg)
+        case .ramp:
+            guard let best = ftpTestBestMinutePower else { return nil }
+            return Int((Double(best) * 0.75).rounded())
+        }
     }
 
-    var isFTPTest: Bool { ftpTestIntervalIndex != nil }
+    var isFTPTest: Bool { ftpTestKind != nil }
+
+    /// Explicit target watts to surface during a ramp test step (e.g. "220 W").
+    /// Nil for the 20-min test (no target) and outside FTP-test workouts.
+    var rampStepTargetWatts: Int? {
+        guard ftpTestKind == .ramp else { return nil }
+        return currentInterval?.targetWatts
+    }
     var showTimer: Bool = true
     var audioCuesEnabled: Bool
 
@@ -154,9 +171,12 @@ final class WorkoutPlayerViewModel {
         bikeManager?.trainerController
     }
 
-    /// Target watts for the current interval's zone band midpoint. nil for
-    /// warmup intervals or when the bike doesn't advertise FTP/power info.
+    /// Target watts to drive the trainer to for the current interval. When the
+    /// interval carries an explicit `targetWatts` (ramp test steps), that wins.
+    /// Otherwise the band midpoint of the interval's zone. Nil for warmup
+    /// intervals with no explicit target.
     var ergTargetWattsForCurrentInterval: Int? {
+        if let explicit = currentInterval?.targetWatts { return explicit }
         guard let zone = currentInterval?.zone else { return nil }
         let range = zone.wattRange(ftp: currentFTP)
         let midpoint = (range.lowerBound + range.upperBound) / 2
@@ -237,7 +257,7 @@ final class WorkoutPlayerViewModel {
     let bikeManager: BikeConnecting?
     private let healthKitManager: HealthKitWorkoutRecording?
     private let heartRateStreamer: HeartRateStreaming?
-    let ftpTestIntervalIndex: Int?
+    let ftpTestKind: FTPTestKind?
     private let shouldPersistSession: Bool
     private let settings: any SettingsReading
     private let sessionPersister: WorkoutSessionPersisting?
@@ -260,6 +280,19 @@ final class WorkoutPlayerViewModel {
     private var totalSecondsAccumulatedBeforePause: TimeInterval = 0
     private var workoutHasStarted: Bool = false
 
+    /// Consecutive seconds the rider has held cadence below the ramp-test
+    /// failure threshold. Used to auto-end the ramp test when the rider can't
+    /// turn the cranks fast enough to hold the ERG target.
+    private var lowCadenceTickCount: Int = 0
+    /// Cadence (rpm) below which we consider the rider to have failed the
+    /// current ramp step. 50 rpm matches Zwift / TrainerRoad's heuristic.
+    private static let rampFailureCadenceThreshold: Double = 50
+    /// Consecutive 1Hz ticks below the threshold required before we call it.
+    private static let rampFailureTickCount: Int = 3
+    /// Grace period at the start of each ramp step. ERG snapping the target
+    /// up can briefly drop cadence; don't end the test on that transient.
+    private static let rampStepGraceSeconds: Int = 5
+
     // MARK: - Init
 
     init(
@@ -279,7 +312,7 @@ final class WorkoutPlayerViewModel {
         bikeManager: BikeConnecting? = nil,
         healthKitManager: HealthKitWorkoutRecording? = nil,
         heartRateStreamer: HeartRateStreaming? = nil,
-        ftpTestIntervalIndex: Int? = nil,
+        ftpTestKind: FTPTestKind? = nil,
         shouldPersistSession: Bool = true,
         settings: any SettingsReading = SettingsManager.shared,
         sessionPersister: WorkoutSessionPersisting? = nil,
@@ -302,7 +335,7 @@ final class WorkoutPlayerViewModel {
         self.bikeManager = bikeManager
         self.healthKitManager = healthKitManager
         self.heartRateStreamer = heartRateStreamer
-        self.ftpTestIntervalIndex = ftpTestIntervalIndex
+        self.ftpTestKind = ftpTestKind
         self.shouldPersistSession = shouldPersistSession
         self.settings = settings
         self.sessionPersister = sessionPersister
@@ -429,10 +462,59 @@ final class WorkoutPlayerViewModel {
                     #if os(iOS)
                     self.applyERGForCurrentInterval()
                     #endif
+                    self.lowCadenceTickCount = 0
                 }
+
+                #if os(iOS)
+                if self.ftpTestKind == .ramp {
+                    self.checkRampTestFailure()
+                    if self.isFinished { break }
+                }
+                #endif
             }
         }
     }
+
+    #if os(iOS)
+    /// Watches cadence during ramp steps and auto-ends the test when the rider
+    /// can no longer turn the cranks fast enough to make the trainer hold the
+    /// ERG target (the conventional "failure" signal — Zwift / TrainerRoad
+    /// both end on cadence collapse, since at that point the rider is grinding
+    /// and the next sample wouldn't add useful data).
+    private func checkRampTestFailure() {
+        guard let interval = currentInterval,
+              interval.targetWatts != nil,
+              let controller = trainerController,
+              controller.mode == .erg else {
+            lowCadenceTickCount = 0
+            return
+        }
+
+        // Brief grace window so the cadence dip from ERG snapping to a new
+        // target doesn't get counted as failure.
+        let elapsedInInterval = interval.duration - secondsRemaining
+        if elapsedInInterval < Self.rampStepGraceSeconds {
+            lowCadenceTickCount = 0
+            return
+        }
+
+        guard let cadence = currentBikeData?.instantaneousCadence else {
+            lowCadenceTickCount = 0
+            return
+        }
+
+        if cadence < Self.rampFailureCadenceThreshold {
+            lowCadenceTickCount += 1
+            if lowCadenceTickCount >= Self.rampFailureTickCount {
+                isFinished = true
+                isRunning = false
+                endWorkout()
+            }
+        } else {
+            lowCadenceTickCount = 0
+        }
+    }
+    #endif
 
     func pause() {
         guard isRunning else { return }
@@ -535,13 +617,33 @@ final class WorkoutPlayerViewModel {
         }
         ergAvailable = true
 
+        // 20-min FTP test: rider self-paces. ERG would lock target watts and
+        // produce the cadence/resistance "spiral of death" the moment effort
+        // wavers — release any ERG state held over from a prior workout.
+        if ftpTestKind == .twentyMinute {
+            if controller.mode == .erg {
+                Task { await controller.disableERG() }
+            }
+            return
+        }
+
         // Free Ride has no prescribed zone — never auto-apply. The manual
         // trainer sheet still works (ergAvailable stays true).
         if mode.isFreeRide { return }
 
-        guard let interval = currentInterval,
-              !interval.isWarmup,
-              let target = ergTargetWattsForCurrentInterval else { return }
+        guard let interval = currentInterval else { return }
+
+        // Explicit per-interval target (ramp test steps) drives the trainer
+        // unconditionally — the protocol itself defines the workout, so the
+        // user-override flag doesn't apply.
+        if let explicit = interval.targetWatts {
+            Task { await controller.enableERG(targetWatts: explicit) }
+            return
+        }
+
+        // Zone-midpoint path: skip warmup intervals, respect sticky override.
+        if interval.isWarmup { return }
+        guard let target = ergTargetWattsForCurrentInterval else { return }
         if controller.ergUserOverridden { return }
 
         Task { await controller.enableERG(targetWatts: target) }
@@ -582,12 +684,17 @@ final class WorkoutPlayerViewModel {
         guard audioCuesEnabled else { return }
         guard let interval = currentInterval else { return }
         let spokenLabel: String
-        if ftpTestIntervalIndex != nil {
+        switch ftpTestKind {
+        case .twentyMinute:
             spokenLabel = FTPTestProtocol.phaseLabel(forIndex: currentIntervalIndex)
-        } else if isLastInterval && interval.zone == .zone1 {
-            spokenLabel = "Cooldown"
-        } else {
-            spokenLabel = interval.spokenLabel
+        case .ramp:
+            spokenLabel = FTPRampTestProtocol.phaseLabel(forIndex: currentIntervalIndex)
+        case .none:
+            if isLastInterval && interval.zone == .zone1 {
+                spokenLabel = "Cooldown"
+            } else {
+                spokenLabel = interval.spokenLabel
+            }
         }
         guard !spokenLabel.isEmpty else { return }
 
@@ -781,28 +888,50 @@ final class WorkoutPlayerViewModel {
     }
 
     private func handleFTPTestIntervalTransition(from previousIndex: Int, to newIndex: Int) {
-        guard let testIndex = ftpTestIntervalIndex else { return }
+        guard let range = sampleIntervalRange else { return }
         let now = dateProvider()
-        if newIndex == testIndex && ftpTestStartedAt == nil {
+        let enteredRange = range.contains(newIndex) && !range.contains(previousIndex)
+        let exitedRange = range.contains(previousIndex) && !range.contains(newIndex)
+        if enteredRange && ftpTestStartedAt == nil {
             ftpTestStartedAt = now
         }
-        if previousIndex == testIndex && ftpTestEndedAt == nil {
+        if exitedRange && ftpTestEndedAt == nil {
             ftpTestEndedAt = now
         }
     }
 
-    /// Computes the average power held during the FTP test interval from `allBikeSamples`,
-    /// filtered to power values > 0 within the test interval's time window. Called from
-    /// `finishHealthKitWorkout()` after the final sample drain.
-    private func finalizeFTPTestAvgPower() {
-        guard ftpTestIntervalIndex != nil, let start = ftpTestStartedAt else { return }
+    /// Interval indices whose bike samples count toward the FTP calculation,
+    /// or nil when not running an FTP test. 20-min test = the test interval
+    /// only. Ramp test = every ramp step (excludes warmup and cooldown).
+    private var sampleIntervalRange: ClosedRange<Int>? {
+        guard let kind = ftpTestKind else { return nil }
+        switch kind {
+        case .twentyMinute:
+            return FTPTestProtocol.testIntervalIndex...FTPTestProtocol.testIntervalIndex
+        case .ramp:
+            return FTPRampTestProtocol.firstRampIntervalIndex...(FTPRampTestProtocol.cooldownIntervalIndex - 1)
+        }
+    }
+
+    /// Computes the FTP-test result from samples captured inside the protocol's
+    /// sampling window. 20-min test → average power across the window.
+    /// Ramp test → best 1-minute rolling average across the ramp.
+    /// Called from `finishHealthKitWorkout()` after the final sample drain.
+    private func finalizeFTPTestResult() {
+        guard let kind = ftpTestKind, let start = ftpTestStartedAt else { return }
         let end = ftpTestEndedAt ?? dateProvider()
         let testPowers = allBikeSamples
             .filter { $0.timestamp >= start && $0.timestamp <= end }
             .compactMap(\.power)
             .filter { $0 > 0 }
         guard !testPowers.isEmpty else { return }
-        ftpTestAvgPower = testPowers.reduce(0, +) / testPowers.count
+
+        switch kind {
+        case .twentyMinute:
+            ftpTestAvgPower = testPowers.reduce(0, +) / testPowers.count
+        case .ramp:
+            ftpTestBestMinutePower = FTPRampTestProtocol.bestMinutePower(fromSamplePowers: testPowers)
+        }
     }
 
     private func finishHealthKitWorkout() {
@@ -840,7 +969,7 @@ final class WorkoutPlayerViewModel {
             integrateSpeedSamples(remaining)
         }
 
-        finalizeFTPTestAvgPower()
+        finalizeFTPTestResult()
 
         // Drain remaining Watch HR buffer (still needed for HealthKit sample writing)
         let finalHRSamples = watchHRBuffer

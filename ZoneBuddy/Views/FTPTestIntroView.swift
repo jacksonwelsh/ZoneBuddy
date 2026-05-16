@@ -1,29 +1,56 @@
 import SwiftUI
 
 /// Pre-test explainer shown when the user taps "Take FTP Test" in Settings.
-/// Describes the 45-minute protocol, then routes through `BikePromptSheet` (in required
-/// mode) so the user must confirm a bike that's reporting non-zero metrics before the
-/// workout starts.
+/// Describes the protocol, then routes through `BikePromptSheet` (in required
+/// mode) so the user must confirm a bike that's reporting non-zero metrics
+/// before the workout starts.
+///
+/// When the connected trainer reports ERG / FTMS power-target capability, a
+/// picker is shown so the rider can choose between the classic 20-min test
+/// and the smart-trainer-native ramp test. With no trainer or a non-ERG
+/// trainer (power meter only, regular stationary bike), the ramp option is
+/// hidden — a ramp test relies on the trainer driving target watts, which a
+/// non-controllable bike can't do.
 struct FTPTestIntroView: View {
     var bikeManager: any BikeConnecting = BikeManagerProvider.current
 
     @State private var showingBikePrompt = false
     @State private var showingPlayer = false
+    @State private var selectedKind: FTPTestKind = .twentyMinute
     @Environment(\.dismiss) private var dismiss
+
+    private var supportsERG: Bool {
+        bikeManager.trainerController?.capabilities?.powerTargetSettingSupported == true
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 header
+                if supportsERG {
+                    protocolPicker
+                }
                 protocolSection
-                pacingSection
-                whyHiddenSection
+                if selectedKind == .twentyMinute {
+                    pacingSection
+                    whyHiddenSection
+                } else {
+                    rampSection
+                }
                 bikeRequiredNotice
             }
             .padding(20)
         }
         .navigationTitle("FTP Test")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            // Default to the ramp test when an ERG-capable trainer is connected
+            // — it's the literature consensus for smart-trainer FTP testing and
+            // requires no pacing skill. Rider can still pick 20-min.
+            if supportsERG {
+                selectedKind = .ramp
+            }
+        }
         .safeAreaInset(edge: .bottom) {
             Button {
                 let bikeReady = bikeManager.isConnected && bikeManager.hasReceivedNonZeroMetric
@@ -57,16 +84,55 @@ struct FTPTestIntroView: View {
         .fullScreenCover(isPresented: $showingPlayer) {
             NavigationStack {
                 WorkoutPlayerView(
-                    intervals: FTPTestProtocol.makeIntervals(),
-                    workoutName: FTPTestProtocol.workoutName,
+                    intervals: selectedIntervals,
+                    workoutName: selectedWorkoutName,
                     bikeManager: bikeManager,
-                    ftpTestIntervalIndex: FTPTestProtocol.testIntervalIndex
+                    ftpTestKind: selectedKind
                 )
             }
             .onDisappear {
                 // Dismiss the intro view too so user lands back on Settings.
                 dismiss()
             }
+        }
+    }
+
+    private var selectedIntervals: [Interval] {
+        switch selectedKind {
+        case .twentyMinute: return FTPTestProtocol.makeIntervals()
+        case .ramp: return FTPRampTestProtocol.makeIntervals()
+        }
+    }
+
+    private var selectedWorkoutName: String {
+        switch selectedKind {
+        case .twentyMinute: return FTPTestProtocol.workoutName
+        case .ramp: return FTPRampTestProtocol.workoutName
+        }
+    }
+
+    private var protocolPicker: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionTitle("Test type")
+            Picker("Test type", selection: $selectedKind) {
+                Text("Ramp (smart trainer)").tag(FTPTestKind.ramp)
+                Text("20-minute (classic)").tag(FTPTestKind.twentyMinute)
+            }
+            .pickerStyle(.segmented)
+            Text(selectedKind == .ramp
+                 ? "Trainer steps wattage up each minute until you can't hold it. No pacing skill required."
+                 : "Sustained 20-minute effort. Self-paced — requires pacing experience.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var rampSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionTitle("How the ramp works")
+            Text("Your trainer holds you at a target wattage that steps up by \(FTPRampTestProtocol.rampStepWatts) W every minute, starting at \(FTPRampTestProtocol.rampStartWatts) W. Spin at a comfortable cadence. When you can't hold cadence at the current step anymore, stop pedaling and tap End — FTP is calculated as 75% of your best 1-minute power.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -83,12 +149,23 @@ struct FTPTestIntroView: View {
         }
     }
 
+    @ViewBuilder
     private var protocolSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionTitle("How it works")
-            phaseRow(symbol: "figure.cooldown", title: "Warmup", duration: "15 min", detail: "Easy spinning, gradually building.")
-            phaseRow(symbol: "bolt.fill", title: "FTP Test", duration: "20 min", detail: "Hard but sustainable. Pace by feel.")
-            phaseRow(symbol: "wind", title: "Cooldown", duration: "10 min", detail: "Easy spin to recover.")
+        switch selectedKind {
+        case .twentyMinute:
+            VStack(alignment: .leading, spacing: 12) {
+                sectionTitle("How it works")
+                phaseRow(symbol: "figure.cooldown", title: "Warmup", duration: "15 min", detail: "Easy spinning, gradually building.")
+                phaseRow(symbol: "bolt.fill", title: "FTP Test", duration: "20 min", detail: "Hard but sustainable. Pace by feel.")
+                phaseRow(symbol: "wind", title: "Cooldown", duration: "10 min", detail: "Easy spin to recover.")
+            }
+        case .ramp:
+            VStack(alignment: .leading, spacing: 12) {
+                sectionTitle("How it works")
+                phaseRow(symbol: "figure.cooldown", title: "Warmup", duration: "5 min", detail: "Easy spinning to get loose.")
+                phaseRow(symbol: "bolt.fill", title: "Ramp", duration: "Until failure", detail: "Trainer steps watts up each minute. Spin until you can't.")
+                phaseRow(symbol: "wind", title: "Cooldown", duration: "5 min", detail: "Easy spin to recover.")
+            }
         }
     }
 

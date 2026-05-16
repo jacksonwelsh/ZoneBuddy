@@ -25,8 +25,13 @@ struct WorkoutPlayerView_iPad: View {
     }
 
     private var displayLabel: String {
-        if isFTPTest {
+        switch viewModel.ftpTestKind {
+        case .twentyMinute:
             return FTPTestProtocol.phaseLabel(forIndex: viewModel.currentIntervalIndex)
+        case .ramp:
+            return FTPRampTestProtocol.phaseLabel(forIndex: viewModel.currentIntervalIndex)
+        case .none:
+            break
         }
         if isFreeRide {
             if isBikeConnected, let zone = viewModel.actualPowerZone {
@@ -256,7 +261,12 @@ struct WorkoutPlayerView_iPad: View {
                             .fontWeight(.medium)
                             .foregroundStyle(fg)
 
-                        if !isFTPTest, !isFreeRide, let rangeDesc = viewModel.targetRangeDescription {
+                        if let target = viewModel.rampStepTargetWatts {
+                            Text("Target \(target) W")
+                                .font(.headline)
+                                .foregroundStyle(fg.opacity(0.85))
+                                .contentTransition(.numericText())
+                        } else if !isFTPTest, !isFreeRide, let rangeDesc = viewModel.targetRangeDescription {
                             Text(rangeDesc)
                                 .font(.headline)
                                 .foregroundStyle(fg.opacity(0.7))
@@ -453,9 +463,11 @@ struct WorkoutPlayerView_iPad: View {
 
     @ViewBuilder
     private var completionView: some View {
-        if isFTPTest {
+        if let kind = viewModel.ftpTestKind {
             FTPTestResultView(
+                kind: kind,
                 avgPower: viewModel.ftpTestAvgPower,
+                bestMinutePower: viewModel.ftpTestBestMinutePower,
                 computedFTP: viewModel.computedFTPFromTest,
                 onDone: {
                     viewModel.endWorkout()

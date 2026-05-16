@@ -30,8 +30,13 @@ struct WorkoutPlayerView_iPhone: View {
     /// (Warmup / FTP Test / Cooldown). In Free Ride, show actual zone name
     /// when a power zone is detected from the bike; otherwise "Free Ride".
     private var displayLabel: String {
-        if isFTPTest {
+        switch viewModel.ftpTestKind {
+        case .twentyMinute:
             return FTPTestProtocol.phaseLabel(forIndex: viewModel.currentIntervalIndex)
+        case .ramp:
+            return FTPRampTestProtocol.phaseLabel(forIndex: viewModel.currentIntervalIndex)
+        case .none:
+            break
         }
         if isFreeRide {
             if isBikeConnected, let zone = viewModel.actualPowerZone {
@@ -218,6 +223,13 @@ struct WorkoutPlayerView_iPhone: View {
                 Image(systemName: "stopwatch")
                     .font(.system(size: 120))
                     .foregroundStyle(isBikeConnected ? .white : fgColor)
+                if let target = viewModel.rampStepTargetWatts {
+                    Text("Target \(target) W")
+                        .font(.title2)
+                        .fontWeight(.medium)
+                        .foregroundStyle(fgColor.opacity(0.85))
+                        .contentTransition(.numericText())
+                }
             } else if let zoneNumber = displayZoneNumber {
                 Text("\(zoneNumber)")
                     .font(.system(size: 200, weight: .bold, design: .rounded))
@@ -332,9 +344,18 @@ struct WorkoutPlayerView_iPhone: View {
                 // Upper left: large zone number
                 Group {
                     if isFTPTest {
-                        Image(systemName: "stopwatch")
-                            .font(.system(size: 80))
-                            .foregroundStyle(isBikeConnected ? .white : fgColor)
+                        VStack(spacing: 6) {
+                            Image(systemName: "stopwatch")
+                                .font(.system(size: 80))
+                                .foregroundStyle(isBikeConnected ? .white : fgColor)
+                            if let target = viewModel.rampStepTargetWatts {
+                                Text("Target \(target) W")
+                                    .font(.title3)
+                                    .fontWeight(.medium)
+                                    .foregroundStyle(fgColor.opacity(0.85))
+                                    .contentTransition(.numericText())
+                            }
+                        }
                     } else if let zoneNumber = displayZoneNumber {
                         Text("\(zoneNumber)")
                             .font(.system(size: 130, weight: .bold, design: .rounded))
@@ -594,9 +615,11 @@ struct WorkoutPlayerView_iPhone: View {
 
     @ViewBuilder
     private var completionView: some View {
-        if isFTPTest {
+        if let kind = viewModel.ftpTestKind {
             FTPTestResultView(
+                kind: kind,
                 avgPower: viewModel.ftpTestAvgPower,
+                bestMinutePower: viewModel.ftpTestBestMinutePower,
                 computedFTP: viewModel.computedFTPFromTest,
                 onDone: {
                     viewModel.endWorkout()

@@ -1,10 +1,14 @@
 import SwiftUI
 
 /// Post-test result screen shown when an FTP test workout finishes.
-/// Displays the computed FTP (avg × 0.95) and lets the user save it as their FTP
-/// or discard the result. If no power data was captured, shows an error state.
+/// Displays the computed FTP and lets the user save it as their FTP or discard
+/// the result. Calculation explanation depends on which protocol ran:
+/// 20-min → "avg × 0.95"; ramp → "best 1-min × 0.75". If no power data was
+/// captured, shows an error state.
 struct FTPTestResultView: View {
+    let kind: FTPTestKind
     let avgPower: Int?
+    let bestMinutePower: Int?
     let computedFTP: Int?
     let onDone: () -> Void
 
@@ -12,6 +16,19 @@ struct FTPTestResultView: View {
     @State private var didSave = false
 
     private var previousFTP: Int { settings.functionalThresholdPower }
+
+    /// One-line explanation of how `computedFTP` was derived, shown under the
+    /// big number. Nil when we don't have the relevant source datum.
+    private var calcExplanation: String? {
+        switch kind {
+        case .twentyMinute:
+            guard let avgPower else { return nil }
+            return "Average over 20 min: \(avgPower) W × 0.95"
+        case .ramp:
+            guard let bestMinutePower else { return nil }
+            return "Best 1-min power: \(bestMinutePower) W × 0.75"
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -56,8 +73,8 @@ struct FTPTestResultView: View {
                     .font(.title)
                     .foregroundStyle(.secondary)
             }
-            if let avgPower {
-                Text("Average over 20 min: \(avgPower) W × 0.95")
+            if let calcExplanation {
+                Text(calcExplanation)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -114,10 +131,14 @@ struct FTPTestResultView: View {
     }
 }
 
-#Preview("Has Result") {
-    FTPTestResultView(avgPower: 258, computedFTP: 245, onDone: {})
+#Preview("20-Min Result") {
+    FTPTestResultView(kind: .twentyMinute, avgPower: 258, bestMinutePower: nil, computedFTP: 245, onDone: {})
+}
+
+#Preview("Ramp Result") {
+    FTPTestResultView(kind: .ramp, avgPower: nil, bestMinutePower: 340, computedFTP: 255, onDone: {})
 }
 
 #Preview("No Data") {
-    FTPTestResultView(avgPower: nil, computedFTP: nil, onDone: {})
+    FTPTestResultView(kind: .twentyMinute, avgPower: nil, bestMinutePower: nil, computedFTP: nil, onDone: {})
 }
