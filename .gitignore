@@ -3,3 +3,14 @@ ZoneBuddy/Config/*.xcconfig
 
 # Xcode build artifacts
 build/
+DerivedData/
+
+# Xcode per-user state
+**/xcuserdata/
+*.xcuserstate
+
+# macOS
+.DS_Store
+
+# Claude Code local state
+.claude/
