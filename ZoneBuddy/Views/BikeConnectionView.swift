@@ -29,6 +29,10 @@ struct BikeConnectionView: View {
                     .foregroundStyle(.green)
             }
 
+            if let caps = bikeManager.trainerController?.capabilities {
+                capabilityChips(caps)
+            }
+
             if let data = bikeManager.latestBikeData {
                 LabeledContent("Power", value: "\(data.instantaneousPower ?? 0) W")
                 LabeledContent("Cadence", value: "\(Int(data.instantaneousCadence ?? 0)) rpm")
@@ -43,6 +47,30 @@ struct BikeConnectionView: View {
         } header: {
             Text("Connected")
         }
+    }
+
+    @ViewBuilder
+    private func capabilityChips(_ caps: TrainerCapabilities) -> some View {
+        HStack(spacing: 6) {
+            if caps.powerTargetSettingSupported {
+                chip(text: "ERG", systemImage: "scope")
+            }
+            if caps.resistanceTargetSettingSupported {
+                chip(text: "Resistance", systemImage: "dial.medium")
+            }
+            if let range = caps.supportedPowerRange {
+                chip(text: "\(range.lowerBound)–\(range.upperBound) W", systemImage: "bolt.fill")
+            }
+            Spacer()
+        }
+        .font(.caption)
+    }
+
+    private func chip(text: String, systemImage: String) -> some View {
+        Label(text, systemImage: systemImage)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(.tint.opacity(0.15), in: Capsule())
     }
 
     private var scanningSection: some View {

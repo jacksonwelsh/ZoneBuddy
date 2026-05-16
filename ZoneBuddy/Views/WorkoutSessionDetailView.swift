@@ -197,22 +197,32 @@ struct WorkoutSessionDetailView: View {
 
     private var powerZoneSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Power Zones — On-Target")
+            Text(session.isFreeRide ? "Time in Power Zones" : "Power Zones — On-Target")
                 .font(.headline)
-            Text("Time you held the prescribed zone during each target interval.")
+            Text(session.isFreeRide
+                ? "Total time you spent in each power zone."
+                : "Time you held the prescribed zone during each target interval.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
             VStack(spacing: 8) {
                 ForEach(PowerZone.allCases) { zone in
-                    let scheduled = session.scheduledSecondsByZone[zone] ?? 0
-                    if scheduled > 0 {
-                        let onTarget = session.onTargetSecondsByZone[zone] ?? 0
-                        PowerZoneAdherenceRow(
-                            zone: zone,
-                            onTargetSeconds: onTarget,
-                            scheduledSeconds: scheduled
-                        )
+                    let zoneSeconds = session.scheduledSecondsByZone[zone] ?? 0
+                    if zoneSeconds > 0 {
+                        if session.isFreeRide {
+                            PowerZoneAdherenceRow(
+                                zone: zone,
+                                onTargetSeconds: zoneSeconds,
+                                scheduledSeconds: session.totalDuration
+                            )
+                        } else {
+                            let onTarget = session.onTargetSecondsByZone[zone] ?? 0
+                            PowerZoneAdherenceRow(
+                                zone: zone,
+                                onTargetSeconds: onTarget,
+                                scheduledSeconds: zoneSeconds
+                            )
+                        }
                     }
                 }
             }

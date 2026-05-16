@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import FTMSKit
 @testable import ZoneBuddy
 
 @MainActor
@@ -156,7 +157,7 @@ struct WorkoutPlayerViewModelTests {
             timerProvider: timer,
             dateProvider: { currentTime }
         )
-        
+
         vm.start()
         await wait()
 
@@ -168,6 +169,39 @@ struct WorkoutPlayerViewModelTests {
         #expect(vm.isFinished == true)
         #expect(vm.isRunning == false)
         #expect(vm.totalElapsedSeconds == 18)
+    }
+
+    @Test
+    func naturalFinishThenDoneTapPersistsOnce() async {
+        var currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        let persister = CountingSessionPersister()
+        let healthKit = MockHealthKitWorkoutRecorder()
+        let vm = WorkoutPlayerViewModel(
+            intervals: makeIntervals(),
+            timerProvider: timer,
+            dateProvider: { currentTime },
+            healthKitManager: healthKit,
+            sessionPersister: persister
+        )
+
+        vm.start()
+        await wait()
+
+        // Run the workout to completion via the timer loop (natural finish path).
+        currentTime.addTimeInterval(18)
+        timer.fire(at: currentTime)
+        await wait()
+
+        #expect(vm.isFinished == true)
+        #expect(persister.saveCount == 1)
+
+        // Simulate the user tapping "Done" on the completion screen — this must NOT
+        // persist a second session or the workout shows up twice in history.
+        vm.endWorkout()
+        await wait()
+
+        #expect(persister.saveCount == 1)
     }
 
     @Test
@@ -461,5 +495,359 @@ struct WorkoutPlayerViewModelTests {
         await wait()
 
         #expect(speech.stopCalled == true)
+    }
+
+    // MARK: - ERG / Trainer Integration
+
+    @Test
+    func startEnablesERGAtZoneMidpointWhenFirstIntervalIsNotWarmup() async {
+        var currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        let bike = StubTrainerBikeManager()
+        let vm = WorkoutPlayerViewModel(
+            intervals: makeIntervals(),                 // first interval: Z2 (Endurance)
+            timerProvider: timer,
+            dateProvider: { currentTime },
+            bikeManager: bike,
+            settings: FixedFTPSettings(ftp: 200)        // Z2 = 55–74% → 110–148W → mid ~ 129W
+        )
+
+        vm.start()
+        await wait()
+
+        let fake = bike.fakeTrainer
+        #expect(fake.mode == .erg)
+        let target = fake.currentTargetWatts ?? 0
+        // Midpoint of Z2 [110, 148] = 129. Allow a one-watt fudge for integer rounding.
+        #expect(abs(target - 129) <= 1)
+    }
+
+    @Test
+    func warmupIntervalSkipsERG() async {
+        var currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        let bike = StubTrainerBikeManager()
+        let intervals = [
+            Interval.warmup(duration: 5, sortOrder: 0),
+            Interval(zone: .zone3, duration: 10, sortOrder: 1),
+        ]
+        let vm = WorkoutPlayerViewModel(
+            intervals: intervals,
+            timerProvider: timer,
+            dateProvider: { currentTime },
+            bikeManager: bike,
+            settings: FixedFTPSettings(ftp: 200)
+        )
+
+        vm.start()
+        await wait()
+
+        let fake = bike.fakeTrainer
+        // Warmup → no target sent, mode stays .off
+        #expect(fake.mode == .off)
+        #expect(fake.currentTargetWatts == nil)
+
+        // Advance past the warmup → next interval is Z3, ERG should engage.
+        currentTime.addTimeInterval(5)
+        timer.fire(at: currentTime)
+        await wait()
+
+        #expect(fake.mode == .erg)
+        // Z3 = 75–89% of 200 → 150–178 → mid ~ 164.
+        let target = fake.currentTargetWatts ?? 0
+        #expect(abs(target - 164) <= 1)
+    }
+
+    @Test
+    func manualOverrideBlocksIntervalTransitionTargets() async {
+        var currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        let bike = StubTrainerBikeManager()
+        let intervals = [
+            Interval(zone: .zone3, duration: 5, sortOrder: 0),
+            Interval(zone: .zone5, duration: 5, sortOrder: 1),
+        ]
+        let vm = WorkoutPlayerViewModel(
+            intervals: intervals,
+            timerProvider: timer,
+            dateProvider: { currentTime },
+            bikeManager: bike,
+            settings: FixedFTPSettings(ftp: 200)
+        )
+
+        vm.start()
+        await wait()
+
+        let fake = bike.fakeTrainer
+        let initialTarget = fake.currentTargetWatts
+
+        // User nudges via the trainer-adjust pathway
+        vm.applyTrainerAdjustment(deltaWatts: 10)
+        await wait()
+        #expect(fake.ergUserOverridden == true)
+        #expect(fake.currentTargetWatts == (initialTarget ?? 0) + 10)
+
+        // Cross interval boundary — controller should NOT receive a new midpoint target.
+        let afterOverride = fake.currentTargetWatts
+        currentTime.addTimeInterval(5)
+        timer.fire(at: currentTime)
+        await wait()
+
+        #expect(fake.currentTargetWatts == afterOverride)
+    }
+
+    // MARK: - Free Ride
+
+    @Test
+    func freeRideNoGoalNeverFinishesNaturally() async {
+        var currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        let vm = WorkoutPlayerViewModel(
+            intervals: [],
+            timerProvider: timer,
+            dateProvider: { currentTime },
+            mode: .freeRide(goal: nil)
+        )
+
+        vm.start()
+        await wait()
+        #expect(vm.isRunning == true)
+
+        currentTime.addTimeInterval(600)
+        timer.fire(at: currentTime)
+        await wait()
+
+        #expect(vm.isFinished == false)
+        #expect(vm.totalElapsedSeconds == 600)
+    }
+
+    @Test
+    func freeRideTimeGoalFinishesWhenGoalReached() async {
+        var currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        let vm = WorkoutPlayerViewModel(
+            intervals: [],
+            timerProvider: timer,
+            dateProvider: { currentTime },
+            mode: .freeRide(goal: .time(seconds: 30))
+        )
+
+        #expect(vm.secondsRemaining == 30)
+
+        vm.start()
+        await wait()
+
+        currentTime.addTimeInterval(10)
+        timer.fire(at: currentTime)
+        await wait()
+        #expect(vm.isFinished == false)
+        #expect(vm.secondsRemaining == 20)
+
+        currentTime.addTimeInterval(20)
+        timer.fire(at: currentTime)
+        await wait()
+
+        #expect(vm.isFinished == true)
+        #expect(vm.totalElapsedSeconds == 30)
+        #expect(vm.secondsRemaining == 0)
+    }
+
+    @Test
+    func freeRideAccumulatesActualZoneTime() async {
+        var currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        // FTP 200W. Z3 = 150–178W, mid 165. We'll feed 165W → actualPowerZone = .zone3.
+        let bike = FreeRideStubBikeManager(power: 165)
+        let persister = CountingSessionPersister()
+        let healthKit = MockHealthKitWorkoutRecorder()
+        let vm = WorkoutPlayerViewModel(
+            intervals: [],
+            timerProvider: timer,
+            dateProvider: { currentTime },
+            bikeManager: bike,
+            healthKitManager: healthKit,
+            settings: FixedFTPSettings(ftp: 200),
+            sessionPersister: persister,
+            mode: .freeRide(goal: .time(seconds: 5))
+        )
+
+        vm.start()
+        await wait()
+
+        // Tick 5 times (1 second each)
+        for i in 1...5 {
+            currentTime.addTimeInterval(1)
+            timer.fire(at: currentTime)
+            await wait()
+            _ = i
+        }
+
+        #expect(vm.isFinished == true)
+        // Persisted session should hold the actual time-in-zone breakdown.
+        guard let saved = persister.lastSession else {
+            Issue.record("Expected a persisted session")
+            return
+        }
+        #expect(saved.isFreeRide == true)
+        // We ticked at seconds 1..5. The tick at second 5 hits the goal-reached branch and exits
+        // BEFORE accumulating; only ticks 1..4 record zone time. That's 4 seconds in Z3.
+        #expect(saved.scheduledSecondsByZone[.zone3] == 4)
+        // On-target tracking should remain empty for free ride.
+        #expect(saved.onTargetSecondsByZone.values.allSatisfy { $0 == 0 })
+    }
+
+    @Test
+    func freeRidePersistsWithIsFreeRideTrueAndEmptyIntervals() async {
+        var currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        let persister = CountingSessionPersister()
+        let healthKit = MockHealthKitWorkoutRecorder()
+        let vm = WorkoutPlayerViewModel(
+            intervals: [],
+            timerProvider: timer,
+            workoutName: "Free Ride",
+            dateProvider: { currentTime },
+            healthKitManager: healthKit,
+            sessionPersister: persister,
+            mode: .freeRide(goal: nil)
+        )
+
+        vm.start()
+        await wait()
+
+        currentTime.addTimeInterval(60)
+        timer.fire(at: currentTime)
+        await wait()
+
+        // No-goal free ride doesn't finish on its own — the user ends it.
+        vm.endWorkout()
+        await wait()
+
+        #expect(persister.saveCount == 1)
+        guard let saved = persister.lastSession else {
+            Issue.record("Expected a persisted session")
+            return
+        }
+        #expect(saved.isFreeRide == true)
+        #expect(saved.name == "Free Ride")
+        #expect((saved.intervals ?? []).isEmpty)
+        #expect(saved.totalDuration == 60)
+    }
+
+    @Test
+    func freeRideSkipsAutoERG() async {
+        let currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        let bike = StubTrainerBikeManager()
+        let vm = WorkoutPlayerViewModel(
+            intervals: [],
+            timerProvider: timer,
+            dateProvider: { currentTime },
+            bikeManager: bike,
+            settings: FixedFTPSettings(ftp: 200),
+            mode: .freeRide(goal: nil)
+        )
+
+        vm.start()
+        await wait()
+
+        // Auto-ERG must not engage in free ride — there's no prescribed zone.
+        #expect(bike.fakeTrainer.mode == .off)
+        #expect(bike.fakeTrainer.currentTargetWatts == nil)
+    }
+
+    @Test
+    func reEnableERGClearsOverrideAndSnapsToCurrentZoneMidpoint() async {
+        var currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        let bike = StubTrainerBikeManager()
+        let intervals = [Interval(zone: .zone3, duration: 30, sortOrder: 0)]
+        let vm = WorkoutPlayerViewModel(
+            intervals: intervals,
+            timerProvider: timer,
+            dateProvider: { currentTime },
+            bikeManager: bike,
+            settings: FixedFTPSettings(ftp: 200)
+        )
+
+        vm.start()
+        await wait()
+        vm.applyTrainerAdjustment(deltaWatts: 25)
+        await wait()
+        #expect(bike.fakeTrainer.ergUserOverridden == true)
+
+        vm.reEnableERGForCurrentInterval()
+        await wait()
+
+        #expect(bike.fakeTrainer.ergUserOverridden == false)
+        let target = bike.fakeTrainer.currentTargetWatts ?? 0
+        #expect(abs(target - 164) <= 1) // Z3 midpoint at FTP 200
+    }
+}
+
+// MARK: - Test helpers
+
+@MainActor
+@Observable
+private final class StubTrainerBikeManager: BikeConnecting {
+    var isConnected: Bool = true
+    var connectedBikeName: String? = "Stub Trainer"
+    var latestBikeData: BikeData? = nil
+    var discoveredDevices: [FTMSDiscoveredDevice] = []
+    var isScanning: Bool = false
+    var accumulatedSamples: [BikeDataSample] = []
+    var hasReceivedNonZeroMetric: Bool = true
+    var isReconnecting: Bool = false
+
+    let fakeTrainer = FakeTrainerController()
+    var trainerController: (any TrainerControlling)? { fakeTrainer }
+
+    func startScanning() {}
+    func stopScanning() {}
+    func connect(to device: FTMSDiscoveredDevice) {}
+    func disconnect() {}
+    func drainSamples() -> [BikeDataSample] { [] }
+    func autoConnect(timeout: TimeInterval) {}
+    func attemptReconnect() {}
+}
+
+@MainActor
+@Observable
+private final class FreeRideStubBikeManager: BikeConnecting {
+    var isConnected: Bool = true
+    var connectedBikeName: String? = "Stub Bike"
+    var latestBikeData: BikeData?
+    var discoveredDevices: [FTMSDiscoveredDevice] = []
+    var isScanning: Bool = false
+    var accumulatedSamples: [BikeDataSample] = []
+    var hasReceivedNonZeroMetric: Bool = true
+    var isReconnecting: Bool = false
+    var trainerController: (any TrainerControlling)? { nil }
+
+    init(power: Int) {
+        self.latestBikeData = BikeData(
+            instantaneousSpeed: 30,
+            instantaneousCadence: 90,
+            instantaneousPower: power,
+            timestamp: Date()
+        )
+    }
+
+    func startScanning() {}
+    func stopScanning() {}
+    func connect(to device: FTMSDiscoveredDevice) {}
+    func disconnect() {}
+    func drainSamples() -> [BikeDataSample] { [] }
+    func autoConnect(timeout: TimeInterval) {}
+    func attemptReconnect() {}
+}
+
+private final class FixedFTPSettings: SettingsReading {
+    var functionalThresholdPower: Int
+    var maxHeartRate: Int = 190
+    var audioCuesEnabled: Bool = false
+    var transitionWarningDuration: Int = 10
+    init(ftp: Int) {
+        self.functionalThresholdPower = ftp
     }
 }

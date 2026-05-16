@@ -15,6 +15,10 @@ nonisolated enum BLEProtocol {
     static let commandCharUUID = CBUUID(string: "B5E5D4A3-4F2C-4C33-9E01-1A2B3C4D5E6F")
     /// Watch → iPad: Watch writes pause/resume/end commands originating from the watch UI.
     static let watchCommandCharUUID = CBUUID(string: "B5E5D4A4-4F2C-4C33-9E01-1A2B3C4D5E6F")
+    /// Watch → host: 2-byte little-endian Int16 delta watts. Host applies via
+    /// `TrainerController.adjustTargetWatts(by:)`. Used for Digital Crown
+    /// adjustments while a workout is running.
+    static let trainerAdjustCharUUID = CBUUID(string: "B5E5D4A5-4F2C-4C33-9E01-1A2B3C4D5E6F")
 
     static let advertisedLocalName = "ZoneBuddy"
 }

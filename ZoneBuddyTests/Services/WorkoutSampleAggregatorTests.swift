@@ -74,4 +74,33 @@ struct WorkoutSampleAggregatorTests {
         // 5s × 10 m/s = 50m
         #expect(meters == 50.0)
     }
+
+    @Test
+    func integrateJoulesAcrossBatchesMatchesConcatenated() {
+        // 100 samples at 1Hz, constant 150W. Split into 10 batches of 10 samples each.
+        // The per-batch integration with continuity must match integrating the full stream.
+        let full = (0..<100).map { sample(at: TimeInterval($0), power: 150) }
+        let referenceJoules = WorkoutSampleAggregator.totalJoules(in: full) ?? -1
+
+        var accumulated: Double = 0
+        var lastDate: Date? = nil
+        for batchStart in stride(from: 0, to: 100, by: 10) {
+            let batch = Array(full[batchStart..<batchStart + 10])
+            let (batchJoules, last) = WorkoutSampleAggregator.integrateJoules(in: batch, startingFrom: lastDate)
+            accumulated += batchJoules
+            lastDate = last
+        }
+
+        #expect(accumulated == referenceJoules)
+        // Sanity: not zero
+        #expect(referenceJoules > 0)
+    }
+
+    @Test
+    func integrateJoulesRejectsLongGaps() {
+        // Two samples 60s apart — gap exceeds maxIntegrationGapSeconds; joules must be 0.
+        let samples = [sample(at: 0, power: 200), sample(at: 60, power: 200)]
+        let (joules, _) = WorkoutSampleAggregator.integrateJoules(in: samples, startingFrom: nil)
+        #expect(joules == 0)
+    }
 }

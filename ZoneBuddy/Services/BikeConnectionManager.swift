@@ -13,6 +13,10 @@ protocol BikeConnecting: Observable {
     var hasReceivedNonZeroMetric: Bool { get }
     /// True while a self-heal disconnect+reconnect cycle is in progress.
     var isReconnecting: Bool { get }
+    /// Non-nil while connected. Lets workouts send ERG / resistance commands
+    /// to the trainer. A fresh instance is constructed on every connect so
+    /// callers must re-issue any ERG targets after a reconnect.
+    var trainerController: (any TrainerControlling)? { get }
 
     func startScanning()
     func stopScanning()
@@ -37,6 +41,7 @@ final class LiveBikeConnectionManager: BikeConnecting {
     private(set) var accumulatedSamples: [BikeDataSample] = []
     private(set) var hasReceivedNonZeroMetric: Bool = false
     private(set) var isReconnecting: Bool = false
+    private(set) var trainerController: (any TrainerControlling)?
 
     /// Lazy so that simply accessing `LiveBikeConnectionManager.shared` (via default-arg
     /// evaluation in views, etc.) does not instantiate `FTMSKit` and trigger the iOS
@@ -150,6 +155,7 @@ final class LiveBikeConnectionManager: BikeConnecting {
         }
 
         connectedBike = nil
+        trainerController = nil
         isConnected = false
         connectedBikeName = nil
         latestBikeData = nil
@@ -176,6 +182,7 @@ final class LiveBikeConnectionManager: BikeConnecting {
                 ftms.disconnect(bike)
             }
             connectedBike = nil
+            trainerController = nil
             isConnected = false
             latestBikeData = nil
             hasReceivedNonZeroMetric = false
@@ -203,6 +210,7 @@ final class LiveBikeConnectionManager: BikeConnecting {
         do {
             let bike = try await ftms.connect(to: device)
             connectedBike = bike
+            trainerController = LiveTrainerController(bike: bike)
             isConnected = true
             connectedBikeName = bike.name ?? device.name ?? "FTMS Bike"
             lastConnectedDevice = device
@@ -257,6 +265,7 @@ final class LiveBikeConnectionManager: BikeConnecting {
             isConnected = false
             connectedBikeName = nil
             connectedBike = nil
+            trainerController = nil
             latestBikeData = nil
             hasReceivedNonZeroMetric = false
             firstPacketDate = nil

@@ -45,6 +45,11 @@ final class WorkoutPlayerViewModel {
     var showTimer: Bool = true
     var audioCuesEnabled: Bool
 
+    /// True once the workout has crossed into its first non-warmup interval AND
+    /// the connected trainer supports power-target setting. When true the
+    /// player offers an ERG toggle; ERG state itself lives on `trainerController`.
+    private(set) var ergAvailable: Bool = false
+
     // MARK: - Computed
 
     var currentInterval: Interval? {
@@ -144,6 +149,21 @@ final class WorkoutPlayerViewModel {
         bikeManager?.latestBikeData
     }
 
+    #if os(iOS)
+    var trainerController: (any TrainerControlling)? {
+        bikeManager?.trainerController
+    }
+
+    /// Target watts for the current interval's zone band midpoint. nil for
+    /// warmup intervals or when the bike doesn't advertise FTP/power info.
+    var ergTargetWattsForCurrentInterval: Int? {
+        guard let zone = currentInterval?.zone else { return nil }
+        let range = zone.wattRange(ftp: currentFTP)
+        let midpoint = (range.lowerBound + range.upperBound) / 2
+        return midpoint
+    }
+    #endif
+
     var currentAvgPower: Int? {
         let powers = allBikeSamples.compactMap(\.power)
         guard !powers.isEmpty else { return nil }
@@ -199,6 +219,7 @@ final class WorkoutPlayerViewModel {
     // MARK: - Private
 
     let intervals: [Interval]
+    let mode: WorkoutMode
     private let timerProvider: TimerProviding
     private let speechCueProvider: SpeechCueProviding?
     let musicPlaybackManager: MusicPlaybackManaging?
@@ -261,9 +282,11 @@ final class WorkoutPlayerViewModel {
         ftpTestIntervalIndex: Int? = nil,
         shouldPersistSession: Bool = true,
         settings: any SettingsReading = SettingsManager.shared,
-        sessionPersister: WorkoutSessionPersisting? = nil
+        sessionPersister: WorkoutSessionPersisting? = nil,
+        mode: WorkoutMode = .scheduled
     ) {
         self.intervals = intervals
+        self.mode = mode
         self.timerProvider = timerProvider
         self.speechCueProvider = speechCueProvider
         self.musicPlaybackManager = musicPlaybackManager
@@ -284,7 +307,9 @@ final class WorkoutPlayerViewModel {
         self.settings = settings
         self.sessionPersister = sessionPersister
         self.audioCuesEnabled = settings.audioCuesEnabled
-        if let first = intervals.first {
+        if case .freeRide(let goal) = mode, case .time(let s) = goal {
+            self.secondsRemaining = s
+        } else if let first = intervals.first {
             self.secondsRemaining = first.duration
         }
     }
@@ -299,7 +324,7 @@ final class WorkoutPlayerViewModel {
     // MARK: - Actions
 
     func start(atElapsedSeconds elapsed: Int = 0) {
-        guard !isRunning && !isFinished && !intervals.isEmpty else { return }
+        guard !isRunning && !isFinished && (!intervals.isEmpty || mode.isFreeRide) else { return }
 
         if elapsed > 0 && !workoutHasStarted {
             totalSecondsAccumulatedBeforePause = TimeInterval(elapsed)
@@ -314,8 +339,13 @@ final class WorkoutPlayerViewModel {
         if !workoutHasStarted {
             workoutHasStarted = true
             startMusicPlayback()
-            speakCurrentLabel(delay: musicPlaybackManager != nil)
+            if !mode.isFreeRide {
+                speakCurrentLabel(delay: musicPlaybackManager != nil)
+            }
             startHealthKitAndHeartRate()
+            #if os(iOS)
+            applyERGForCurrentInterval()
+            #endif
         } else {
             // Discard any bike samples that accumulated during the pause,
             // then restart the HealthKit flush loop from a clean baseline.
@@ -346,22 +376,33 @@ final class WorkoutPlayerViewModel {
                 self.recalculateIntervalState(totalElapsed: totalElapsed)
 
                 if self.isFinished {
-                    stopWorkout()
-                    self.finishHealthKitWorkout()
+                    // Route through endWorkout() so workoutHasStarted is cleared. Otherwise
+                    // the user's Done-tap re-enters endWorkout() and we persist + finalize twice
+                    // (duplicate history row, mismatched HealthKit totals).
+                    self.endWorkout()
                     break
                 }
 
-                // Track time spent in each zone (1 second per tick)
-                let targetZone = self.currentInterval?.zone
-                if let zone = targetZone {
-                    self.zoneTimeAccumulator[zone, default: 0] += 1
-                }
+                // Track time spent in each zone (1 second per tick). In Free Ride
+                // there is no prescribed zone, so accumulate based on the actual
+                // power zone — the completion screen reuses scheduledZoneSeconds
+                // to render time-in-zone for the ride.
+                if self.mode.isFreeRide {
+                    if let actual = self.actualPowerZone {
+                        self.zoneTimeAccumulator[actual, default: 0] += 1
+                    }
+                } else {
+                    let targetZone = self.currentInterval?.zone
+                    if let zone = targetZone {
+                        self.zoneTimeAccumulator[zone, default: 0] += 1
+                    }
 
-                // On-target adherence: actual power zone matches prescribed target
-                if let target = targetZone,
-                   let actual = self.actualPowerZone,
-                   actual == target {
-                    self.onTargetZoneAccumulator[target, default: 0] += 1
+                    // On-target adherence: actual power zone matches prescribed target
+                    if let target = targetZone,
+                       let actual = self.actualPowerZone,
+                       actual == target {
+                        self.onTargetZoneAccumulator[target, default: 0] += 1
+                    }
                 }
 
                 // Heart rate zone time (actual)
@@ -382,9 +423,12 @@ final class WorkoutPlayerViewModel {
                     #endif
                 }
 
-                if self.currentIntervalIndex != previousIndex {
+                if !self.mode.isFreeRide, self.currentIntervalIndex != previousIndex {
                     self.speakCurrentLabel()
                     self.handleFTPTestIntervalTransition(from: previousIndex, to: self.currentIntervalIndex)
+                    #if os(iOS)
+                    self.applyERGForCurrentInterval()
+                    #endif
                 }
             }
         }
@@ -413,10 +457,21 @@ final class WorkoutPlayerViewModel {
         healthKitManager?.pauseWorkout()
 
         musicPlaybackManager?.pausePlayback()
+
+        #if os(iOS)
+        if let controller = trainerController {
+            Task { await controller.pause() }
+        }
+        #endif
     }
 
     func resume() {
         start()
+        #if os(iOS)
+        if let controller = trainerController {
+            Task { await controller.resume() }
+        }
+        #endif
     }
 
     func togglePlayPause() {
@@ -458,7 +513,55 @@ final class WorkoutPlayerViewModel {
         workoutHasStarted = false
         stopWorkout()
         finishHealthKitWorkout()
+
+        #if os(iOS)
+        if let controller = trainerController {
+            Task { await controller.reset() }
+        }
+        #endif
     }
+
+    // MARK: - ERG / Trainer Control
+
+    #if os(iOS)
+    /// Sets the trainer to the current interval's zone-band midpoint, unless
+    /// the rider has manually nudged power (sticky override) or the interval
+    /// is a warmup. Called on initial start and on every interval transition.
+    private func applyERGForCurrentInterval() {
+        guard let controller = trainerController,
+              controller.capabilities?.powerTargetSettingSupported == true else {
+            ergAvailable = false
+            return
+        }
+        ergAvailable = true
+
+        // Free Ride has no prescribed zone — never auto-apply. The manual
+        // trainer sheet still works (ergAvailable stays true).
+        if mode.isFreeRide { return }
+
+        guard let interval = currentInterval,
+              !interval.isWarmup,
+              let target = ergTargetWattsForCurrentInterval else { return }
+        if controller.ergUserOverridden { return }
+
+        Task { await controller.enableERG(targetWatts: target) }
+    }
+
+    /// Re-enable ERG after a manual override. Called from the player's "Re-enable ERG"
+    /// button. Clears the sticky flag and snaps the trainer back to the current zone midpoint.
+    func reEnableERGForCurrentInterval() {
+        guard let controller = trainerController,
+              let target = ergTargetWattsForCurrentInterval else { return }
+        Task { await controller.enableERG(targetWatts: target) }
+    }
+
+    /// Apply a Watch Digital Crown adjustment. Forwards to the trainer
+    /// controller, which also sets the sticky override flag.
+    func applyTrainerAdjustment(deltaWatts: Int) {
+        guard let controller = trainerController else { return }
+        Task { await controller.adjustTargetWatts(by: deltaWatts) }
+    }
+    #endif
 
     // MARK: - Music Playback
 
@@ -517,6 +620,30 @@ final class WorkoutPlayerViewModel {
     }
 
     private func recalculateIntervalState(totalElapsed: TimeInterval) {
+        if case .freeRide(let goal) = mode {
+            currentIntervalIndex = 0
+            showTransitionBanner = false
+            switch goal {
+            case .time(let goalSeconds):
+                let remaining = goalSeconds - Int(totalElapsed)
+                secondsRemaining = max(0, remaining)
+                if Int(totalElapsed) >= goalSeconds {
+                    isFinished = true
+                    isRunning = false
+                    secondsRemaining = 0
+                }
+            case .distance(let goalMeters):
+                secondsRemaining = 0
+                if computedDistanceMeters >= goalMeters {
+                    isFinished = true
+                    isRunning = false
+                }
+            case .none:
+                secondsRemaining = 0
+            }
+            return
+        }
+
         var timeMarker: TimeInterval = 0
 
         for (index, interval) in intervals.enumerated() {
@@ -820,16 +947,19 @@ final class WorkoutPlayerViewModel {
             hrZoneSeconds: hrZoneTimeAccumulator,
             ftpAtTime: settings.functionalThresholdPower,
             maxHRAtTime: settings.maxHeartRate,
-            bikeWasConnected: isConnectedToBike
+            bikeWasConnected: isConnectedToBike,
+            isFreeRide: mode.isFreeRide
         )
 
-        let snapshots = intervals.enumerated().map { index, interval in
-            SessionInterval(
-                zone: interval.zone,
-                duration: interval.duration,
-                sortOrder: index
-            )
-        }
+        let snapshots: [SessionInterval] = mode.isFreeRide
+            ? []
+            : intervals.enumerated().map { index, interval in
+                SessionInterval(
+                    zone: interval.zone,
+                    duration: interval.duration,
+                    sortOrder: index
+                )
+            }
         session.intervals = snapshots
 
         // If no persister was injected, this is a non-persisting context (e.g. Watch

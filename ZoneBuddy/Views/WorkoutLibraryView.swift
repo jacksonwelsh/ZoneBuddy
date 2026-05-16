@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 
 private enum PlayerDestination: Hashable { case player }
+private enum LibraryDestination: Hashable { case freeRideSetup }
 
 struct WorkoutLibraryView: View {
     @Environment(\.modelContext) private var modelContext
@@ -14,6 +15,12 @@ struct WorkoutLibraryView: View {
     var body: some View {
         NavigationStack(path: $navigationPath) {
             List {
+                Section {
+                    NavigationLink(value: LibraryDestination.freeRideSetup) {
+                        FreeRideCardLabel()
+                    }
+                }
+
                 ForEach(workouts) { workout in
                     NavigationLink(value: workout) {
                         VStack(alignment: .leading, spacing: 8) {
@@ -98,6 +105,12 @@ struct WorkoutLibraryView: View {
             .navigationDestination(for: PlayerDestination.self) { _ in
                 playerDestination()
             }
+            .navigationDestination(for: LibraryDestination.self) { destination in
+                switch destination {
+                case .freeRideSetup:
+                    FreeRideSetupView()
+                }
+            }
             .sheet(item: $pendingImport) { data in
                 WorkoutImportView(workoutData: data)
             }
@@ -153,6 +166,25 @@ struct WorkoutLibraryView: View {
         for (index, workout) in workouts.enumerated() {
             workout.sortOrder = index
         }
+    }
+}
+
+private struct FreeRideCardLabel: View {
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "flame.fill")
+                .font(.title2)
+                .foregroundStyle(.orange)
+                .frame(width: 32)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Free Ride")
+                    .font(.headline)
+                Text("No targets — just ride")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 

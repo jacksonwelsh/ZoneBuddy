@@ -18,6 +18,7 @@ struct WorkoutPlayerView: View {
     let workoutName: String
     private let intervals: [Interval]
     private let transitionWarningDuration: Int
+    private let mode: WorkoutMode
 
     init(
         intervals: [Interval],
@@ -30,11 +31,13 @@ struct WorkoutPlayerView: View {
         playlistRepeat: Bool = false,
         playlistAutoMix: Bool = false,
         bikeManager: BikeConnecting? = nil,
-        ftpTestIntervalIndex: Int? = nil
+        ftpTestIntervalIndex: Int? = nil,
+        mode: WorkoutMode = .scheduled
     ) {
         self.workoutName = workoutName
         self.intervals = intervals
         self.transitionWarningDuration = transitionWarningDuration
+        self.mode = mode
 
         if isXcodePreview {
             _viewModel = State(initialValue: WorkoutPlayerViewModel(
@@ -43,7 +46,8 @@ struct WorkoutPlayerView: View {
                 workoutName: workoutName,
                 templateID: templateID,
                 transitionWarningDuration: transitionWarningDuration,
-                ftpTestIntervalIndex: ftpTestIntervalIndex
+                ftpTestIntervalIndex: ftpTestIntervalIndex,
+                mode: mode
             ))
             return
         }
@@ -71,7 +75,8 @@ struct WorkoutPlayerView: View {
             healthKitManager: healthKit,
             heartRateStreamer: hrStreamer,
             ftpTestIntervalIndex: ftpTestIntervalIndex,
-            sessionPersister: LiveWorkoutSessionPersister(context: DataStore.shared.context)
+            sessionPersister: LiveWorkoutSessionPersister(context: DataStore.shared.context),
+            mode: mode
         ))
     }
 
@@ -118,7 +123,8 @@ struct WorkoutPlayerView: View {
                 WorkoutConnectivityManager.shared.sendWorkoutStart(
                     intervals: intervals,
                     workoutName: workoutName,
-                    transitionWarningDuration: transitionWarningDuration
+                    transitionWarningDuration: transitionWarningDuration,
+                    mode: mode
                 )
                 HRRelayService.shared.startAdvertising()
             } else {
@@ -130,7 +136,10 @@ struct WorkoutPlayerView: View {
                     name: workoutName,
                     transitionWarningDuration: transitionWarningDuration,
                     intervals: transferIntervals,
-                    startedAt: Date()
+                    startedAt: Date(),
+                    mode: mode.isFreeRide ? "freeride" : nil,
+                    goalDurationSec: mode.goalTimeSeconds,
+                    goalDistanceMeters: mode.goalDistanceMeters
                 )
                 BLEHeartRateScanner.shared.sendWorkoutStart(transferData)
             }

@@ -17,12 +17,46 @@ struct WorkoutPlayerView_iPad: View {
     }
 
     private var isFTPTest: Bool { viewModel.isFTPTest }
+    private var isFreeRide: Bool { viewModel.mode.isFreeRide }
+
+    private var isTrainerControlAvailable: Bool {
+        viewModel.isConnectedToBike
+            && viewModel.trainerController?.capabilities?.powerTargetSettingSupported == true
+    }
 
     private var displayLabel: String {
         if isFTPTest {
             return FTPTestProtocol.phaseLabel(forIndex: viewModel.currentIntervalIndex)
         }
+        if isFreeRide {
+            if isBikeConnected, let zone = viewModel.actualPowerZone {
+                return zone.zoneName
+            }
+            return "Free Ride"
+        }
         return viewModel.currentLabel
+    }
+
+    private var displayZoneNumber: Int? {
+        if isFreeRide && isBikeConnected {
+            return viewModel.actualPowerZone?.rawValue
+        }
+        return viewModel.currentZoneNumber
+    }
+
+    private var timerSeconds: Int {
+        if case .freeRide(let goal) = viewModel.mode {
+            if case .time = goal { return viewModel.secondsRemaining }
+            return viewModel.totalElapsedSeconds
+        }
+        return viewModel.secondsRemaining
+    }
+
+    private var timerIntervalDuration: Int {
+        if case .freeRide(let goal) = viewModel.mode, case .time(let s) = goal {
+            return s
+        }
+        return viewModel.currentInterval?.duration ?? 0
     }
 
     /// Primary content color — white in dark mode, black in light mode.
@@ -47,10 +81,26 @@ struct WorkoutPlayerView_iPad: View {
     ]
 
     private var totalWorkoutSecondsRemaining: Int {
+        if isFreeRide {
+            if case .freeRide(let goal) = viewModel.mode, case .time = goal {
+                return viewModel.secondsRemaining
+            }
+            return viewModel.totalElapsedSeconds
+        }
         let futureSeconds = viewModel.intervals
             .dropFirst(viewModel.currentIntervalIndex + 1)
             .reduce(0) { $0 + $1.duration }
         return viewModel.secondsRemaining + futureSeconds
+    }
+
+    private var workoutRemainingCaption: String {
+        if isFreeRide {
+            if case .freeRide(let goal) = viewModel.mode, case .time = goal {
+                return "remaining"
+            }
+            return "elapsed"
+        }
+        return "remaining"
     }
 
     var body: some View {
@@ -95,6 +145,9 @@ struct WorkoutPlayerView_iPad: View {
                     VStack(spacing: 16) {
                         headerRow
                         topSection
+                        if isTrainerControlAvailable {
+                            TrainerControlView(viewModel: viewModel, presentation: .inline)
+                        }
                         metricsGrid
                         bottomSection
                     }
@@ -124,6 +177,11 @@ struct WorkoutPlayerView_iPad: View {
                 .padding(.top, 16)
             }
         }
+        .onChange(of: BLEHeartRateScanner.shared.watchTrainerAdjustDelta) { _, delta in
+            guard let delta else { return }
+            viewModel.applyTrainerAdjustment(deltaWatts: delta)
+            BLEHeartRateScanner.shared.resetWatchTrainerAdjustDelta()
+        }
     }
 
     // MARK: - Workout Remaining Badge
@@ -134,7 +192,7 @@ struct WorkoutPlayerView_iPad: View {
                 .font(.system(size: 18, weight: .semibold, design: .rounded).monospacedDigit())
                 .foregroundStyle(fg)
                 .contentTransition(.numericText())
-            Text("remaining")
+            Text(workoutRemainingCaption)
                 .font(.caption2)
                 .foregroundStyle(fg.opacity(0.5))
         }
@@ -180,7 +238,7 @@ struct WorkoutPlayerView_iPad: View {
                             Image(systemName: "stopwatch")
                                 .font(.system(size: 60))
                                 .foregroundStyle(fg)
-                        } else if let zoneNumber = viewModel.currentZoneNumber {
+                        } else if let zoneNumber = displayZoneNumber {
                             Text("\(zoneNumber)")
                                 .font(.system(size: 80, weight: .bold, design: .rounded))
                                 .foregroundStyle(currentZoneLabelColor)
@@ -198,7 +256,7 @@ struct WorkoutPlayerView_iPad: View {
                             .fontWeight(.medium)
                             .foregroundStyle(fg)
 
-                        if !isFTPTest, let rangeDesc = viewModel.targetRangeDescription {
+                        if !isFTPTest, !isFreeRide, let rangeDesc = viewModel.targetRangeDescription {
                             Text(rangeDesc)
                                 .font(.headline)
                                 .foregroundStyle(fg.opacity(0.7))
@@ -234,8 +292,8 @@ struct WorkoutPlayerView_iPad: View {
 
                 // Timer — no card
                 TimerTile(
-                    secondsRemaining: viewModel.secondsRemaining,
-                    intervalDuration: viewModel.currentInterval?.duration ?? 0,
+                    secondsRemaining: timerSeconds,
+                    intervalDuration: timerIntervalDuration,
                     foregroundColor: fg
                 )
                 .frame(maxWidth: .infinity)
@@ -252,7 +310,7 @@ struct WorkoutPlayerView_iPad: View {
 
                     PowerZoneBar(
                         ftp: viewModel.currentFTP,
-                        targetZone: viewModel.currentInterval?.zone,
+                        targetZone: isFreeRide ? nil : viewModel.currentInterval?.zone,
                         currentPower: viewModel.currentBikeData?.instantaneousPower,
                         compact: false,
                         isPaused: viewModel.isPaused
@@ -451,6 +509,13 @@ private final class PreviewBikeManager: BikeConnecting {
     var accumulatedSamples: [BikeDataSample] = []
     var hasReceivedNonZeroMetric: Bool = true
     var isReconnecting: Bool = false
+    var trainerController: (any TrainerControlling)? = {
+        #if DEBUG
+        return FakeTrainerController()
+        #else
+        return nil
+        #endif
+    }()
     func startScanning() {}
     func stopScanning() {}
     func connect(to device: FTMSDiscoveredDevice) {}

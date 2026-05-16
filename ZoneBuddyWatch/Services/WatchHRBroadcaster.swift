@@ -51,6 +51,12 @@ final class WatchHRBroadcaster {
     func sendWatchResumed() { centralDelegate?.sendWatchCommand(.resumeWorkout) }
     func sendWatchEnded() { centralDelegate?.sendWatchCommand(.endWorkout) }
 
+    /// Send a Digital Crown-driven target-watts delta to the host.
+    /// Encoded as a 2-byte little-endian `Int16`.
+    func sendTrainerAdjust(deltaWatts: Int16) {
+        centralDelegate?.sendTrainerAdjust(deltaWatts: deltaWatts)
+    }
+
     // MARK: - Passive HR Monitoring
 
     private func startPassiveHRMonitoring() {
@@ -123,6 +129,7 @@ final class WatchHRBroadcaster {
         private var hrCharacteristic: CBCharacteristic?
         private var commandCharacteristic: CBCharacteristic?
         private var watchCommandCharacteristic: CBCharacteristic?
+        private var trainerAdjustCharacteristic: CBCharacteristic?
         /// Set to true after receiving a startWorkout notification, cleared after the read completes.
         private var awaitingWorkoutRead = false
 
@@ -141,6 +148,7 @@ final class WatchHRBroadcaster {
             hrCharacteristic = nil
             commandCharacteristic = nil
             watchCommandCharacteristic = nil
+            trainerAdjustCharacteristic = nil
             manager = nil
         }
 
@@ -155,6 +163,13 @@ final class WatchHRBroadcaster {
             guard let peripheral = connectedPeripheral,
                   let characteristic = watchCommandCharacteristic else { return }
             peripheral.writeValue(Data([command.rawValue]), for: characteristic, type: .withoutResponse)
+        }
+
+        func sendTrainerAdjust(deltaWatts: Int16) {
+            guard let peripheral = connectedPeripheral,
+                  let characteristic = trainerAdjustCharacteristic else { return }
+            let payload = withUnsafeBytes(of: deltaWatts.littleEndian) { Data($0) }
+            peripheral.writeValue(payload, for: characteristic, type: .withoutResponse)
         }
 
         // MARK: - CBCentralManagerDelegate
@@ -198,6 +213,7 @@ final class WatchHRBroadcaster {
                 self.connectedPeripheral = nil
                 self.hrCharacteristic = nil
                 self.commandCharacteristic = nil
+                self.trainerAdjustCharacteristic = nil
                 self.manager?.scanForPeripherals(
                     withServices: [BLEProtocol.serviceUUID],
                     options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
@@ -216,7 +232,12 @@ final class WatchHRBroadcaster {
             print("WatchHRBroadcaster: discovered \(services.count) service(s)")
             for service in services where service.uuid == BLEProtocol.serviceUUID {
                 peripheral.discoverCharacteristics(
-                    [BLEProtocol.hrCharUUID, BLEProtocol.commandCharUUID, BLEProtocol.watchCommandCharUUID],
+                    [
+                        BLEProtocol.hrCharUUID,
+                        BLEProtocol.commandCharUUID,
+                        BLEProtocol.watchCommandCharUUID,
+                        BLEProtocol.trainerAdjustCharUUID,
+                    ],
                     for: service
                 )
             }
@@ -245,6 +266,11 @@ final class WatchHRBroadcaster {
                     print("WatchHRBroadcaster: found Watch command characteristic, ready to send")
                     Task { @MainActor in
                         self.watchCommandCharacteristic = characteristic
+                    }
+                } else if characteristic.uuid == BLEProtocol.trainerAdjustCharUUID {
+                    print("WatchHRBroadcaster: found trainer-adjust characteristic, ready to send")
+                    Task { @MainActor in
+                        self.trainerAdjustCharacteristic = characteristic
                     }
                 }
             }

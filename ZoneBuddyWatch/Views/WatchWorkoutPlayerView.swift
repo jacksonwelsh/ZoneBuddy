@@ -4,10 +4,44 @@ struct WatchWorkoutPlayerView: View {
     @State private var viewModel: WorkoutPlayerViewModel
     @State private var showExitConfirm = false
     @State private var isHandlingRemoteAction = false
+    @State private var crownAccumulator: Double = 0
+    @FocusState private var crownFocused: Bool
     @Environment(\.dismiss) private var dismiss
 
     private let isRemote: Bool
     private let startedAt: Date?
+
+    /// Crown detents per emitted ±N-watt adjustment. Tuned so a deliberate
+    /// rotation produces clear single steps without flooding BLE writes.
+    private static let wattsPerDetent: Int = 5
+
+    private var isFreeRide: Bool { viewModel.mode.isFreeRide }
+
+    private var displayLabel: String {
+        if isFreeRide {
+            if let zone = viewModel.actualPowerZone { return zone.zoneName }
+            return "Free Ride"
+        }
+        return viewModel.currentLabel
+    }
+
+    private var displayZoneNumber: Int? {
+        if isFreeRide { return viewModel.actualPowerZone?.rawValue }
+        return viewModel.currentZoneNumber
+    }
+
+    private var displayZoneColor: Color {
+        if isFreeRide, let zone = viewModel.actualPowerZone { return zone.color }
+        return viewModel.currentZoneColor
+    }
+
+    private var timerSeconds: Int {
+        if case .freeRide(let goal) = viewModel.mode {
+            if case .time = goal { return viewModel.secondsRemaining }
+            return viewModel.totalElapsedSeconds
+        }
+        return viewModel.secondsRemaining
+    }
 
     init(workout: Workout) {
         self.isRemote = false
@@ -36,6 +70,20 @@ struct WatchWorkoutPlayerView: View {
             )
         }
         self.startedAt = transferData.startedAt
+        let mode: WorkoutMode
+        if transferData.isFreeRide {
+            let goal: FreeRideGoal?
+            if let s = transferData.goalDurationSec {
+                goal = .time(seconds: s)
+            } else if let m = transferData.goalDistanceMeters {
+                goal = .distance(meters: m)
+            } else {
+                goal = nil
+            }
+            mode = .freeRide(goal: goal)
+        } else {
+            mode = .scheduled
+        }
         let (hk, hr): (HealthKitWorkoutRecording, HeartRateStreaming) = Self.makeManagers(saveOnEnd: false)
         _viewModel = State(initialValue: WorkoutPlayerViewModel(
             intervals: intervals,
@@ -45,7 +93,8 @@ struct WatchWorkoutPlayerView: View {
             transitionWarningDuration: transferData.transitionWarningDuration,
             healthKitManager: hk,
             heartRateStreamer: hr,
-            shouldPersistSession: false
+            shouldPersistSession: false,
+            mode: mode
         ))
     }
 
@@ -65,17 +114,21 @@ struct WatchWorkoutPlayerView: View {
         Group {
             if viewModel.isFinished {
                 finishedView
+            } else if isFreeRide {
+                // No interval list to page to — show the single active page.
+                activeZoneView
             } else {
                 TabView {
                     activeZoneView
                     intervalOverviewView
                 }
-                .tabViewStyle(.verticalPage)
+                .tabViewStyle(.page)
             }
         }
         .onAppear {
             let elapsed = startedAt.map { max(0, Int(Date().timeIntervalSince($0))) } ?? 0
             viewModel.start(atElapsedSeconds: elapsed)
+            crownFocused = true
         }
         .onDisappear {
             viewModel.stopBackgroundKeepAlive()
@@ -126,29 +179,53 @@ struct WatchWorkoutPlayerView: View {
     // MARK: - Active Zone Page
 
     private var activeZoneView: some View {
+        activeZoneContent
+            .focusable(true)
+            .focused($crownFocused)
+            .digitalCrownRotation(
+                $crownAccumulator,
+                from: -10_000,
+                through: 10_000,
+                by: 1,
+                sensitivity: .low,
+                isContinuous: true
+            )
+            .onChange(of: crownAccumulator) { _, newValue in
+                let step = Double(Self.wattsPerDetent)
+                guard abs(newValue) >= step else { return }
+                let detents = (newValue / step).rounded(.towardZero)
+                let deltaWatts = Int16(detents) * Int16(Self.wattsPerDetent)
+                WatchHRBroadcaster.shared.sendTrainerAdjust(deltaWatts: deltaWatts)
+                WKInterfaceDevice.current().play(.click)
+                crownAccumulator -= Double(detents) * step
+            }
+    }
+
+    private var activeZoneContent: some View {
         ZStack {
             Color.black
                 .ignoresSafeArea()
 
-            WatchEdgeGlowView(zoneColor: viewModel.currentZoneColor)
+            WatchEdgeGlowView(zoneColor: displayZoneColor)
 
             VStack(spacing: 6) {
-                Text(viewModel.currentLabel)
+                Text(displayLabel)
                     .font(.headline)
                     .foregroundStyle(.white)
 
-                // Transition banner — always in layout so nothing shifts
+                // Transition banner — always in layout so nothing shifts.
+                // Not used in Free Ride (no interval transitions).
                 WatchTransitionBannerView(
                     upcomingLabel: viewModel.upcomingLabel,
                     upcomingColor: viewModel.upcomingZoneColor
                 )
-                .opacity(viewModel.showTransitionBanner ? 1 : 0)
+                .opacity((!isFreeRide && viewModel.showTransitionBanner) ? 1 : 0)
                 .animation(.easeInOut(duration: 0.4), value: viewModel.showTransitionBanner)
 
-                if let zoneNum = viewModel.currentZoneNumber {
+                if let zoneNum = displayZoneNumber {
                     Text("\(zoneNum)")
                         .font(.system(size: 48, weight: .bold, design: .rounded))
-                        .foregroundStyle(viewModel.currentZoneColor)
+                        .foregroundStyle(displayZoneColor)
                         .contentTransition(.numericText())
                         .animation(.default, value: zoneNum)
                 } else {
@@ -159,7 +236,7 @@ struct WatchWorkoutPlayerView: View {
 
                 if viewModel.showTimer {
                     // Timer centered; HR overlaid at bottom-leading so it doesn't shift centering
-                    Text(viewModel.secondsRemaining.formattedDuration)
+                    Text(timerSeconds.formattedDuration)
                         .font(.system(size: 28, weight: .light, design: .rounded).monospacedDigit())
                         .foregroundStyle(.white)
                         .contentTransition(.numericText())

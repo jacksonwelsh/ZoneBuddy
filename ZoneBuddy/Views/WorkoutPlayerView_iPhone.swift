@@ -8,8 +8,14 @@ struct WorkoutPlayerView_iPhone: View {
     let dismiss: DismissAction
 
     @State private var selectedPage = 0
+    @State private var showTrainerSheet = false
     private let settings = SettingsManager.shared
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+
+    private var isTrainerControlAvailable: Bool {
+        viewModel.isConnectedToBike
+            && viewModel.trainerController?.capabilities?.powerTargetSettingSupported == true
+    }
 
     private var isLandscape: Bool { verticalSizeClass == .compact }
 
@@ -18,19 +24,57 @@ struct WorkoutPlayerView_iPhone: View {
     }
 
     private var isFTPTest: Bool { viewModel.isFTPTest }
+    private var isFreeRide: Bool { viewModel.mode.isFreeRide }
 
     /// In FTP test mode, replace the zone-derived label with a phase label
-    /// (Warmup / FTP Test / Cooldown).
+    /// (Warmup / FTP Test / Cooldown). In Free Ride, show actual zone name
+    /// when a power zone is detected from the bike; otherwise "Free Ride".
     private var displayLabel: String {
         if isFTPTest {
             return FTPTestProtocol.phaseLabel(forIndex: viewModel.currentIntervalIndex)
         }
+        if isFreeRide {
+            if isBikeConnected, let zone = viewModel.actualPowerZone {
+                return zone.zoneName
+            }
+            return "Free Ride"
+        }
         return viewModel.currentLabel
     }
 
+    /// In Free Ride, the large number reflects actual power zone when available.
+    private var displayZoneNumber: Int? {
+        if isFreeRide && isBikeConnected {
+            return viewModel.actualPowerZone?.rawValue
+        }
+        return viewModel.currentZoneNumber
+    }
+
     /// Accent color: zone color used for text/icons on the dark background mode.
+    /// In Free Ride, prefer the actual zone color when the bike is connected.
     private var accentColor: Color {
-        viewModel.currentZoneColor
+        if isFreeRide, isBikeConnected, let zone = viewModel.actualPowerZone {
+            return zone.color
+        }
+        return viewModel.currentZoneColor
+    }
+
+    /// Timer seconds shown in the active page — counts down for time goals,
+    /// counts up otherwise.
+    private var timerSeconds: Int {
+        if case .freeRide(let goal) = viewModel.mode {
+            if case .time = goal { return viewModel.secondsRemaining }
+            return viewModel.totalElapsedSeconds
+        }
+        return viewModel.secondsRemaining
+    }
+
+    private var timerCaption: String {
+        if case .freeRide(let goal) = viewModel.mode {
+            if case .time = goal { return "Remaining" }
+            return "Elapsed"
+        }
+        return "Remaining"
     }
 
     /// Foreground color adapts: white on dark mode, computed contrast on solid color mode.
@@ -104,6 +148,9 @@ struct WorkoutPlayerView_iPhone: View {
                     HStack {
                         exitButton
                         Spacer()
+                        if isTrainerControlAvailable {
+                            trainerButton
+                        }
                         pageIndicator
                     }
                     .overlay {
@@ -120,6 +167,38 @@ struct WorkoutPlayerView_iPhone: View {
         .onTapGesture {
             viewModel.showTimer.toggle()
         }
+        .sheet(isPresented: $showTrainerSheet) {
+            TrainerControlView(
+                viewModel: viewModel,
+                presentation: .sheet,
+                onDismiss: { showTrainerSheet = false }
+            )
+            .presentationDetents([.medium, .large])
+        }
+        .onChange(of: BLEHeartRateScanner.shared.watchTrainerAdjustDelta) { _, delta in
+            guard let delta else { return }
+            viewModel.applyTrainerAdjustment(deltaWatts: delta)
+            BLEHeartRateScanner.shared.resetWatchTrainerAdjustDelta()
+        }
+    }
+
+    private var trainerButton: some View {
+        Button {
+            showTrainerSheet = true
+        } label: {
+            Image(systemName: "scope")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(fgColor)
+                .frame(width: 44, height: 44)
+                .background(
+                    isBikeConnected
+                        ? Color.white.opacity(0.1)
+                        : viewModel.currentZoneColor.opacity(0.6),
+                    in: .circle
+                )
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: .circle)
     }
 
     // MARK: - Page 1: Active Workout
@@ -139,7 +218,7 @@ struct WorkoutPlayerView_iPhone: View {
                 Image(systemName: "stopwatch")
                     .font(.system(size: 120))
                     .foregroundStyle(isBikeConnected ? .white : fgColor)
-            } else if let zoneNumber = viewModel.currentZoneNumber {
+            } else if let zoneNumber = displayZoneNumber {
                 Text("\(zoneNumber)")
                     .font(.system(size: 200, weight: .bold, design: .rounded))
                     .foregroundStyle(isBikeConnected ? accentColor : fgColor)
@@ -152,7 +231,7 @@ struct WorkoutPlayerView_iPhone: View {
 
             // Target watt range below zone number — hidden in FTP test mode
             // (no FTP yet to compute zones from; showing watts would prime pacing).
-            if !isFTPTest, let rangeDesc = viewModel.targetRangeDescription {
+            if !isFTPTest, !isFreeRide, let rangeDesc = viewModel.targetRangeDescription {
                 Text(rangeDesc)
                     .font(.title2)
                     .fontWeight(.medium)
@@ -161,12 +240,12 @@ struct WorkoutPlayerView_iPhone: View {
 
             if viewModel.showTimer {
                 HStack(spacing: 12) {
-                    Text(viewModel.secondsRemaining.formattedDuration)
+                    Text(timerSeconds.formattedDuration)
                         .font(.system(size: 60, weight: .light, design: .rounded).monospacedDigit())
                         .foregroundStyle(fgColor)
                         .contentTransition(.numericText())
                         .frame(maxWidth: .infinity, alignment: .trailing)
-                    Text("Remaining")
+                    Text(timerCaption)
                         .font(.subheadline)
                         .foregroundStyle(fgColor.opacity(0.6))
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -182,7 +261,7 @@ struct WorkoutPlayerView_iPhone: View {
             if !isFTPTest, isBikeConnected, settings.layoutPreferences.showPowerBar {
                 PowerZoneBar(
                     ftp: viewModel.currentFTP,
-                    targetZone: viewModel.currentInterval?.zone,
+                    targetZone: isFreeRide ? nil : viewModel.currentInterval?.zone,
                     currentPower: viewModel.currentBikeData?.instantaneousPower,
                     compact: true,
                     isPaused: viewModel.isPaused
@@ -256,7 +335,7 @@ struct WorkoutPlayerView_iPhone: View {
                         Image(systemName: "stopwatch")
                             .font(.system(size: 80))
                             .foregroundStyle(isBikeConnected ? .white : fgColor)
-                    } else if let zoneNumber = viewModel.currentZoneNumber {
+                    } else if let zoneNumber = displayZoneNumber {
                         Text("\(zoneNumber)")
                             .font(.system(size: 130, weight: .bold, design: .rounded))
                             .foregroundStyle(isBikeConnected ? accentColor : fgColor)
@@ -276,14 +355,14 @@ struct WorkoutPlayerView_iPhone: View {
                         .fontWeight(.semibold)
                         .foregroundStyle(isBikeConnected ? accentColor : fgColor)
 
-                    if !isFTPTest, let rangeDesc = viewModel.targetRangeDescription {
+                    if !isFTPTest, !isFreeRide, let rangeDesc = viewModel.targetRangeDescription {
                         Text(rangeDesc)
                             .font(.title2)
                             .fontWeight(.medium)
                             .foregroundStyle(fgColor.opacity(0.7))
                     }
 
-                    Text(viewModel.secondsRemaining.formattedDuration)
+                    Text(timerSeconds.formattedDuration)
                         .font(.system(size: 52, weight: .light, design: .rounded).monospacedDigit())
                         .foregroundStyle(fgColor)
                         .contentTransition(.numericText())
@@ -366,7 +445,7 @@ struct WorkoutPlayerView_iPhone: View {
             VStack(spacing: 12) {
                 Color.clear.frame(height: 56)
 
-                if !isFTPTest, settings.layoutPreferences.showZoneInfo {
+                if !isFTPTest, !isFreeRide, settings.layoutPreferences.showZoneInfo {
                     DataTile(isVisible: true) {
                         ZoneInfoTile(
                             zone: viewModel.currentInterval?.zone,

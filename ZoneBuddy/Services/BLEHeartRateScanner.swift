@@ -14,6 +14,11 @@ final class BLEHeartRateScanner: HeartRateStreaming {
     private(set) var watchPausedWorkout = false
     private(set) var watchResumedWorkout = false
     private(set) var watchEndedWorkout = false
+    /// Most recent target-watts delta written by the Watch over BLE. Players
+    /// observe via `.onChange` and consume the value, then reset to nil. The
+    /// pulse semantics (vs. cumulative total) keeps the routing path identical
+    /// to the existing pause/resume flags.
+    private(set) var watchTrainerAdjustDelta: Int?
     private var peripheralDelegate: PeripheralDelegate?
 
     /// Workout JSON the Watch reads after receiving a start notification.
@@ -27,6 +32,7 @@ final class BLEHeartRateScanner: HeartRateStreaming {
     func resetWatchPausedWorkout() { watchPausedWorkout = false }
     func resetWatchResumedWorkout() { watchResumedWorkout = false }
     func resetWatchEndedWorkout() { watchEndedWorkout = false }
+    func resetWatchTrainerAdjustDelta() { watchTrainerAdjustDelta = nil }
 
     func startMonitoring(from startDate: Date) {
         guard peripheralDelegate == nil else { return }
@@ -49,6 +55,11 @@ final class BLEHeartRateScanner: HeartRateStreaming {
                     case .endWorkout: self.watchEndedWorkout = true
                     case .startWorkout: break // iPad is the producer, ignore reflected start
                     }
+                }
+            },
+            onTrainerAdjust: { [weak self] delta in
+                Task { @MainActor [weak self] in
+                    self?.watchTrainerAdjustDelta = delta
                 }
             }
         )
@@ -94,16 +105,19 @@ final class BLEHeartRateScanner: HeartRateStreaming {
         private let onHeartRate: @Sendable (Int) -> Void
         private let getWorkoutData: @Sendable () -> Data?
         private let onWatchCommand: @Sendable (BLECommand) -> Void
+        private let onTrainerAdjust: @Sendable (Int) -> Void
         private var commandCharacteristic: CBMutableCharacteristic?
 
         init(
             onHeartRate: @escaping @Sendable (Int) -> Void,
             getWorkoutData: @escaping @Sendable () -> Data?,
-            onWatchCommand: @escaping @Sendable (BLECommand) -> Void
+            onWatchCommand: @escaping @Sendable (BLECommand) -> Void,
+            onTrainerAdjust: @escaping @Sendable (Int) -> Void
         ) {
             self.onHeartRate = onHeartRate
             self.getWorkoutData = getWorkoutData
             self.onWatchCommand = onWatchCommand
+            self.onTrainerAdjust = onTrainerAdjust
             super.init()
             print("BLEHeartRateScanner: creating CBPeripheralManager")
             manager = CBPeripheralManager(delegate: self, queue: nil)
@@ -153,8 +167,21 @@ final class BLEHeartRateScanner: HeartRateStreaming {
                 permissions: .writeable
             )
 
+            // Watch writes 2-byte LE Int16 trainer-adjust deltas here
+            let trainerAdjustCharacteristic = CBMutableCharacteristic(
+                type: BLEProtocol.trainerAdjustCharUUID,
+                properties: [.write, .writeWithoutResponse],
+                value: nil,
+                permissions: .writeable
+            )
+
             let service = CBMutableService(type: BLEProtocol.serviceUUID, primary: true)
-            service.characteristics = [hrCharacteristic, cmdCharacteristic, watchCmdCharacteristic]
+            service.characteristics = [
+                hrCharacteristic,
+                cmdCharacteristic,
+                watchCmdCharacteristic,
+                trainerAdjustCharacteristic,
+            ]
             peripheral.add(service)
 
             Task { @MainActor in
@@ -195,6 +222,15 @@ final class BLEHeartRateScanner: HeartRateStreaming {
                     }
                     print("BLEHeartRateScanner: received Watch command \(command)")
                     onWatchCommand(command)
+                } else if request.characteristic.uuid == BLEProtocol.trainerAdjustCharUUID {
+                    guard data.count >= 2 else {
+                        print("BLEHeartRateScanner: trainer-adjust payload too short")
+                        continue
+                    }
+                    let unsigned = UInt16(data[0]) | (UInt16(data[1]) << 8)
+                    let delta = Int(Int16(bitPattern: unsigned))
+                    print("BLEHeartRateScanner: received trainer-adjust \(delta)W")
+                    onTrainerAdjust(delta)
                 }
             }
             if let first = requests.first {
@@ -248,6 +284,10 @@ extension BLEHeartRateScanner {
 
     func debugSimulateEndFromWatch() {
         watchEndedWorkout = true
+    }
+
+    func debugSimulateTrainerAdjustFromWatch(_ delta: Int) {
+        watchTrainerAdjustDelta = delta
     }
 }
 #endif

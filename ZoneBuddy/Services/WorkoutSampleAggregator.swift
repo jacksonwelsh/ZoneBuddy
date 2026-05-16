@@ -30,6 +30,28 @@ enum WorkoutSampleAggregator {
         return joules
     }
 
+    /// Batch-friendly variant of `totalJoules` that carries the previous sample's
+    /// timestamp forward, so integrating successive flush batches yields the same
+    /// total as integrating the concatenated stream. Returns the additional joules
+    /// from this batch and the timestamp of the final sample used.
+    static func integrateJoules(
+        in samples: [BikeDataSample],
+        startingFrom lastSampleDate: Date?
+    ) -> (joules: Double, lastSampleDate: Date?) {
+        var joules: Double = 0
+        var previousDate = lastSampleDate
+        for sample in samples {
+            if let power = sample.power, let prev = previousDate {
+                let dt = sample.timestamp.timeIntervalSince(prev)
+                if dt > 0, dt < maxIntegrationGapSeconds {
+                    joules += Double(power) * dt
+                }
+            }
+            previousDate = sample.timestamp
+        }
+        return (joules, previousDate)
+    }
+
     /// Mechanical output in kilojoules across the sample run.
     static func totalOutputKJ(in samples: [BikeDataSample]) -> Double? {
         guard let joules = totalJoules(in: samples), joules > 0 else { return nil }

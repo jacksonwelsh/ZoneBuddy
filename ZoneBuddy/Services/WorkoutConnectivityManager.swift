@@ -23,7 +23,12 @@ final class WorkoutConnectivityManager {
         WCSession.default.activate()
     }
 
-    func sendWorkoutStart(intervals: [Interval], workoutName: String, transitionWarningDuration: Int) {
+    func sendWorkoutStart(
+        intervals: [Interval],
+        workoutName: String,
+        transitionWarningDuration: Int,
+        mode: WorkoutMode = .scheduled
+    ) {
         let transferIntervals = intervals.map {
             IntervalTransferData(zone: $0.zoneRawValue, duration: $0.duration)
         }
@@ -31,7 +36,10 @@ final class WorkoutConnectivityManager {
             name: workoutName,
             transitionWarningDuration: transitionWarningDuration,
             intervals: transferIntervals,
-            startedAt: Date()
+            startedAt: Date(),
+            mode: mode.isFreeRide ? "freeride" : nil,
+            goalDurationSec: mode.goalTimeSeconds,
+            goalDistanceMeters: mode.goalDistanceMeters
         )
         guard let encoded = try? JSONEncoder().encode(data) else { return }
 

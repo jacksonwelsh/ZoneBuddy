@@ -17,6 +17,7 @@ final class FakeBikeConnectionManager: BikeConnecting {
     private(set) var accumulatedSamples: [BikeDataSample] = []
     private(set) var hasReceivedNonZeroMetric: Bool = true
     private(set) var isReconnecting: Bool = false
+    private(set) var trainerController: (any TrainerControlling)? = FakeTrainerController()
 
     @ObservationIgnored private var generatorTask: Task<Void, Never>?
     @ObservationIgnored private var smoothedPower: Double = 100

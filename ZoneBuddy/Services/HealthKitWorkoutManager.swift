@@ -5,6 +5,16 @@ final class LiveHealthKitWorkoutManager: HealthKitWorkoutRecording {
     private let healthStore = HKHealthStore()
     private var workoutBuilder: HKWorkoutBuilder?
 
+    // Energy and distance are accumulated across all flush batches and written as
+    // a single sample at endWorkout. Per-batch writes truncated kcal to Int and
+    // restarted integration with no continuity, dropping ~50–150 kcal and noticeable
+    // distance over a typical ride. One summary sample keeps the HK record in lockstep
+    // with the in-app session totals.
+    private var workoutStartDate: Date?
+    private var lastSampleDate: Date?
+    private var accumulatedJoules: Double = 0
+    private var accumulatedMeters: Double = 0
+
     var liveCalories: Double? { nil }
 
     func requestAuthorization() async -> Bool {
@@ -42,6 +52,10 @@ final class LiveHealthKitWorkoutManager: HealthKitWorkoutRecording {
             let builder = HKWorkoutBuilder(healthStore: healthStore, configuration: config, device: .local())
             try await builder.beginCollection(at: startDate)
             workoutBuilder = builder
+            workoutStartDate = startDate
+            lastSampleDate = nil
+            accumulatedJoules = 0
+            accumulatedMeters = 0
             return true
         } catch {
             print("HealthKit start workout error: \(error)")
@@ -86,26 +100,13 @@ final class LiveHealthKitWorkoutManager: HealthKitWorkoutRecording {
             }
         }
 
-        // Batch-level energy and distance: same physics used by the live view-model totals,
-        // so the workout summary and HealthKit record always agree.
-        if let kcal = WorkoutSampleAggregator.estimatedCalories(in: samples), kcal > 0 {
-            hkSamples.append(HKQuantitySample(
-                type: HKQuantityType(.activeEnergyBurned),
-                quantity: HKQuantity(unit: .kilocalorie(), doubleValue: Double(kcal)),
-                start: samples.first!.timestamp,
-                end: samples.last!.timestamp
-            ))
-        }
-
-        let (meters, _) = WorkoutSampleAggregator.integrateDistance(in: samples, startingFrom: nil)
-        if meters > 0 {
-            hkSamples.append(HKQuantitySample(
-                type: HKQuantityType(.distanceCycling),
-                quantity: HKQuantity(unit: .meter(), doubleValue: meters),
-                start: samples.first!.timestamp,
-                end: samples.last!.timestamp
-            ))
-        }
+        // Accumulate joules and meters across batches; the single summary sample
+        // covering the whole workout is added at endWorkout.
+        let (batchJoules, _) = WorkoutSampleAggregator.integrateJoules(in: samples, startingFrom: lastSampleDate)
+        accumulatedJoules += batchJoules
+        let (batchMeters, _) = WorkoutSampleAggregator.integrateDistance(in: samples, startingFrom: lastSampleDate)
+        accumulatedMeters += batchMeters
+        lastSampleDate = samples.last?.timestamp ?? lastSampleDate
 
         guard !hkSamples.isEmpty else { return }
 
@@ -160,10 +161,38 @@ final class LiveHealthKitWorkoutManager: HealthKitWorkoutRecording {
     }
 
     func endWorkout(endDate: Date, metadata: [String: Any]) async {
-        guard let builder = workoutBuilder else { return }
+        guard let builder = workoutBuilder, let startDate = workoutStartDate else { return }
         workoutBuilder = nil
+        let totalJoules = accumulatedJoules
+        let totalMeters = accumulatedMeters
+        workoutStartDate = nil
+        lastSampleDate = nil
+        accumulatedJoules = 0
+        accumulatedMeters = 0
+
+        var summarySamples: [HKQuantitySample] = []
+        let kcal = totalJoules / (WorkoutSampleAggregator.cyclingEfficiency * 4184.0)
+        if kcal > 0 {
+            summarySamples.append(HKQuantitySample(
+                type: HKQuantityType(.activeEnergyBurned),
+                quantity: HKQuantity(unit: .kilocalorie(), doubleValue: kcal),
+                start: startDate,
+                end: endDate
+            ))
+        }
+        if totalMeters > 0 {
+            summarySamples.append(HKQuantitySample(
+                type: HKQuantityType(.distanceCycling),
+                quantity: HKQuantity(unit: .meter(), doubleValue: totalMeters),
+                start: startDate,
+                end: endDate
+            ))
+        }
 
         do {
+            if !summarySamples.isEmpty {
+                try await builder.addSamples(summarySamples)
+            }
             try await builder.endCollection(at: endDate)
             if !metadata.isEmpty {
                 try await builder.addMetadata(metadata)

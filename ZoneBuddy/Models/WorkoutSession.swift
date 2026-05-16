@@ -50,6 +50,8 @@ final class WorkoutSession {
     var maxHRAtTime: Int?
     var bikeWasConnected: Bool = false
 
+    var isFreeRide: Bool = false
+
     init(
         templateID: UUID? = nil,
         name: String,
@@ -68,7 +70,8 @@ final class WorkoutSession {
         hrZoneSeconds: [HeartRateZone: Int] = [:],
         ftpAtTime: Int? = nil,
         maxHRAtTime: Int? = nil,
-        bikeWasConnected: Bool = false
+        bikeWasConnected: Bool = false,
+        isFreeRide: Bool = false
     ) {
         self.templateID = templateID
         self.name = name
@@ -108,6 +111,7 @@ final class WorkoutSession {
         self.ftpAtTime = ftpAtTime
         self.maxHRAtTime = maxHRAtTime
         self.bikeWasConnected = bikeWasConnected
+        self.isFreeRide = isFreeRide
     }
 
     var onTargetSecondsByZone: [PowerZone: Int] {
