@@ -523,7 +523,7 @@ struct WorkoutPlayerViewModelTests {
     }
 
     @Test
-    func warmupIntervalSkipsERG() async {
+    func warmupParksTrainerInLevelZeroThenERGEngagesOnExit() async {
         var currentTime = Date(timeIntervalSince1970: 1000)
         let timer = MockTimerProvider()
         let bike = StubTrainerBikeManager()
@@ -543,8 +543,9 @@ struct WorkoutPlayerViewModelTests {
         await wait()
 
         let fake = bike.fakeTrainer
-        // Warmup → no target sent, mode stays .off
-        #expect(fake.mode == .off)
+        // Warmup → drop into Level mode at level 0 so the rider can spin freely.
+        #expect(fake.mode == .manualResistance)
+        #expect(fake.currentResistanceLevel == 0)
         #expect(fake.currentTargetWatts == nil)
 
         // Advance past the warmup → next interval is Z3, ERG should engage.
@@ -554,6 +555,44 @@ struct WorkoutPlayerViewModelTests {
 
         #expect(fake.mode == .erg)
         // Z3 = 75–89% of 200 → 150–178 → mid ~ 164.
+        let target = fake.currentTargetWatts ?? 0
+        #expect(abs(target - 164) <= 1)
+    }
+
+    @Test
+    func warmupExitForcesERGEvenIfRiderAdjustedLevel() async {
+        var currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        let bike = StubTrainerBikeManager()
+        let intervals = [
+            Interval.warmup(duration: 5, sortOrder: 0),
+            Interval(zone: .zone3, duration: 10, sortOrder: 1),
+        ]
+        let vm = WorkoutPlayerViewModel(
+            intervals: intervals,
+            timerProvider: timer,
+            dateProvider: { currentTime },
+            bikeManager: bike,
+            settings: FixedFTPSettings(ftp: 200)
+        )
+
+        vm.start()
+        await wait()
+
+        let fake = bike.fakeTrainer
+        #expect(fake.mode == .manualResistance)
+
+        // Rider nudges the resistance up during warmup. Crossing into the
+        // active interval should still snap them into ERG — Level 0 was our
+        // auto-applied warmup default, not an opt-out.
+        await fake.setResistanceLevel(25)
+        #expect(fake.currentResistanceLevel == 25)
+
+        currentTime.addTimeInterval(5)
+        timer.fire(at: currentTime)
+        await wait()
+
+        #expect(fake.mode == .erg)
         let target = fake.currentTargetWatts ?? 0
         #expect(abs(target - 164) <= 1)
     }
@@ -582,7 +621,7 @@ struct WorkoutPlayerViewModelTests {
         let initialTarget = fake.currentTargetWatts
 
         // User nudges via the trainer-adjust pathway
-        vm.applyTrainerAdjustment(deltaWatts: 10)
+        vm.applyTrainerTarget(absoluteWatts: (initialTarget ?? 0) + 10)
         await wait()
         #expect(fake.ergUserOverridden == true)
         #expect(fake.currentTargetWatts == (initialTarget ?? 0) + 10)
@@ -688,7 +727,7 @@ struct WorkoutPlayerViewModelTests {
             Issue.record("Expected a persisted session")
             return
         }
-        #expect(saved.isFreeRide == true)
+        #expect(saved.modality == .freeRide)
         // We ticked at seconds 1..5. The tick at second 5 hits the goal-reached branch and exits
         // BEFORE accumulating; only ticks 1..4 record zone time. That's 4 seconds in Z3.
         #expect(saved.scheduledSecondsByZone[.zone3] == 4)
@@ -728,7 +767,7 @@ struct WorkoutPlayerViewModelTests {
             Issue.record("Expected a persisted session")
             return
         }
-        #expect(saved.isFreeRide == true)
+        #expect(saved.modality == .freeRide)
         #expect(saved.name == "Free Ride")
         #expect((saved.intervals ?? []).isEmpty)
         #expect(saved.totalDuration == 60)
@@ -757,6 +796,44 @@ struct WorkoutPlayerViewModelTests {
     }
 
     @Test
+    func levelModeBlocksAutoERGAtIntervalBoundary() async {
+        var currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        let bike = StubTrainerBikeManager()
+        let intervals = [
+            Interval(zone: .zone2, duration: 5, sortOrder: 0),
+            Interval(zone: .zone4, duration: 5, sortOrder: 1),
+        ]
+        let vm = WorkoutPlayerViewModel(
+            intervals: intervals,
+            timerProvider: timer,
+            dateProvider: { currentTime },
+            bikeManager: bike,
+            settings: FixedFTPSettings(ftp: 200)
+        )
+
+        vm.start()
+        await wait()
+
+        let fake = bike.fakeTrainer
+        // Sanity: ERG kicked in for the first non-warmup interval.
+        #expect(fake.mode == .erg)
+
+        // User switches into Level mode mid-workout.
+        await fake.setResistanceLevel(40)
+        #expect(fake.mode == .manualResistance)
+
+        // Cross into interval 2. Auto-ERG must NOT pull us back into ERG.
+        currentTime.addTimeInterval(5)
+        timer.fire(at: currentTime)
+        await wait()
+
+        #expect(vm.currentIntervalIndex == 1)
+        #expect(fake.mode == .manualResistance)
+        #expect(fake.currentResistanceLevel == 40)
+    }
+
+    @Test
     func reEnableERGClearsOverrideAndSnapsToCurrentZoneMidpoint() async {
         var currentTime = Date(timeIntervalSince1970: 1000)
         let timer = MockTimerProvider()
@@ -772,7 +849,8 @@ struct WorkoutPlayerViewModelTests {
 
         vm.start()
         await wait()
-        vm.applyTrainerAdjustment(deltaWatts: 25)
+        let baseline = bike.fakeTrainer.currentTargetWatts ?? 0
+        vm.applyTrainerTarget(absoluteWatts: baseline + 25)
         await wait()
         #expect(bike.fakeTrainer.ergUserOverridden == true)
 

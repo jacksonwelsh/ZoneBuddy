@@ -1,6 +1,28 @@
 import Foundation
 import SwiftData
 
+/// What kind of session a `WorkoutSession` represents. Single source of truth
+/// for the modality the UI branches on (history row layout, detail header,
+/// power-zone-section visibility, etc.). Adding a new kind of session means
+/// adding a case here — no new sibling flags on the model.
+enum SessionModality: Codable, Equatable {
+    /// A template-driven workout with per-interval prescribed zones.
+    case structured
+    /// An unstructured ride with no prescribed zones.
+    case freeRide
+    /// An FTP test (20-min or ramp). `result` is nil when the test ended
+    /// without producing a valid FTP (e.g. aborted before any 1-min window).
+    case ftpTest(protocol: FTPTestKind, result: FTPTestResult?)
+}
+
+/// The output of an FTP test. `measuredFTP` is what the history row displays;
+/// `sourcePower` (20-min average, or ramp's best 1-minute rolling average)
+/// lets the detail view show the calculation that produced it.
+struct FTPTestResult: Codable, Equatable {
+    let measuredFTP: Int
+    let sourcePower: Int
+}
+
 @Model
 final class WorkoutSession {
     var id: UUID = UUID()
@@ -50,7 +72,43 @@ final class WorkoutSession {
     var maxHRAtTime: Int?
     var bikeWasConnected: Bool = false
 
-    var isFreeRide: Bool = false
+    // MARK: - Modality
+
+    /// JSON-encoded `SessionModality`. The single source of truth for what
+    /// kind of session this is and any kind-specific data (e.g. FTP test
+    /// result). Adding a new modality = new enum case, no schema migration.
+    /// Read/write through `modality`, not directly.
+    private var modalityJSON: String?
+
+    /// Pre-modalityJSON storage for free-ride detection. Retained so existing
+    /// rows that predate `modalityJSON` still categorize correctly via the
+    /// `modality` getter's fallback. All new writes go through `modality`,
+    /// which keeps this in sync for any code path we miss. Do not read
+    /// directly from outside this file.
+    private var _legacyIsFreeRide: Bool = false
+
+    /// The kind of session, with any kind-specific data attached. Set this
+    /// after constructing a session to record an FTP test or free ride.
+    var modality: SessionModality {
+        get {
+            if let data = modalityJSON?.data(using: .utf8),
+               let value = try? JSONDecoder().decode(SessionModality.self, from: data) {
+                return value
+            }
+            return _legacyIsFreeRide ? .freeRide : .structured
+        }
+        set {
+            if let data = try? JSONEncoder().encode(newValue),
+               let json = String(data: data, encoding: .utf8) {
+                modalityJSON = json
+            }
+            if case .freeRide = newValue {
+                _legacyIsFreeRide = true
+            } else {
+                _legacyIsFreeRide = false
+            }
+        }
+    }
 
     init(
         templateID: UUID? = nil,
@@ -71,7 +129,7 @@ final class WorkoutSession {
         ftpAtTime: Int? = nil,
         maxHRAtTime: Int? = nil,
         bikeWasConnected: Bool = false,
-        isFreeRide: Bool = false
+        modality: SessionModality = .structured
     ) {
         self.templateID = templateID
         self.name = name
@@ -111,7 +169,8 @@ final class WorkoutSession {
         self.ftpAtTime = ftpAtTime
         self.maxHRAtTime = maxHRAtTime
         self.bikeWasConnected = bikeWasConnected
-        self.isFreeRide = isFreeRide
+
+        self.modality = modality
     }
 
     var onTargetSecondsByZone: [PowerZone: Int] {

@@ -160,7 +160,7 @@ final class LiveHealthKitWorkoutManager: HealthKitWorkoutRecording {
         }
     }
 
-    func endWorkout(endDate: Date, metadata: [String: Any]) async {
+    func endWorkout(endDate: Date, watchEnergyEstimateKcal: Double?, metadata: [String: Any]) async {
         guard let builder = workoutBuilder, let startDate = workoutStartDate else { return }
         workoutBuilder = nil
         let totalJoules = accumulatedJoules
@@ -171,11 +171,18 @@ final class LiveHealthKitWorkoutManager: HealthKitWorkoutRecording {
         accumulatedMeters = 0
 
         var summarySamples: [HKQuantitySample] = []
-        let kcal = totalJoules / (WorkoutSampleAggregator.cyclingEfficiency * 4184.0)
-        if kcal > 0 {
+        let powerBasedKcal = totalJoules / (WorkoutSampleAggregator.cyclingEfficiency * 4184.0)
+        // The Move ring credits only a workout's attached active-energy samples for the
+        // workout window — any ambient Watch HR-based samples in that range are deduped
+        // out, and the Watch's `HKWorkoutSession` pauses ambient tracking anyway and
+        // discards its own HR-based samples when we don't save its workout. Writing only
+        // the (lower) power-based number strictly reduces the ring vs. what the Watch
+        // would have credited. Take `max(power, HR)` so the ring never loses calories.
+        let activeKcal = max(powerBasedKcal, watchEnergyEstimateKcal ?? 0)
+        if activeKcal > 0 {
             summarySamples.append(HKQuantitySample(
                 type: HKQuantityType(.activeEnergyBurned),
-                quantity: HKQuantity(unit: .kilocalorie(), doubleValue: kcal),
+                quantity: HKQuantity(unit: .kilocalorie(), doubleValue: activeKcal),
                 start: startDate,
                 end: endDate
             ))
@@ -189,13 +196,21 @@ final class LiveHealthKitWorkoutManager: HealthKitWorkoutRecording {
             ))
         }
 
+        // Preserve both source values in metadata so the in-app summary can show the
+        // power-based number even when the HealthKit sample reflects the higher of the two.
+        var enrichedMetadata = metadata
+        enrichedMetadata["ZoneBuddyPowerBasedKcal"] = powerBasedKcal
+        if let watchKcal = watchEnergyEstimateKcal {
+            enrichedMetadata["ZoneBuddyWatchHRKcal"] = watchKcal
+        }
+
         do {
             if !summarySamples.isEmpty {
                 try await builder.addSamples(summarySamples)
             }
             try await builder.endCollection(at: endDate)
-            if !metadata.isEmpty {
-                try await builder.addMetadata(metadata)
+            if !enrichedMetadata.isEmpty {
+                try await builder.addMetadata(enrichedMetadata)
             }
             try await builder.finishWorkout()
         } catch {

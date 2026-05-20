@@ -8,6 +8,12 @@ struct WorkoutHistoryView: View {
     var body: some View {
         NavigationStack {
             List {
+                if DataStore.shared.isCloudKitDisabled {
+                    Section {
+                        iCloudDisabledBanner
+                            .listRowBackground(Color.orange.opacity(0.12))
+                    }
+                }
                 ForEach(sessions) { session in
                     NavigationLink(value: session) {
                         WorkoutHistoryRow(session: session)
@@ -35,6 +41,23 @@ struct WorkoutHistoryView: View {
             }
         }
     }
+
+    private var iCloudDisabledBanner: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "exclamationmark.icloud.fill")
+                .foregroundStyle(.orange)
+                .font(.title3)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("iCloud Sync Off")
+                    .font(.headline)
+                Text("This device couldn't connect to iCloud, so new sessions won't sync to your other devices. Try restarting the app, or check that you're signed into iCloud with ZoneBuddy enabled in Settings › Apple Account › iCloud.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.vertical, 4)
+    }
 }
 
 private struct WorkoutHistoryRow: View {
@@ -49,8 +72,13 @@ private struct WorkoutHistoryRow: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(session.name.isEmpty ? "Workout" : session.name)
-                        .font(.headline)
+                    HStack(spacing: 6) {
+                        Text(session.name.isEmpty ? "Workout" : session.name)
+                            .font(.headline)
+                        if case .ftpTest(let kind, _) = session.modality {
+                            FTPProtocolChip(kind: kind)
+                        }
+                    }
                     Text(subtitle)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -59,13 +87,51 @@ private struct WorkoutHistoryRow: View {
                 trailingMetrics
             }
 
-            ZoneBreakdownBar(secondsByZone: session.onTargetSecondsByZone)
+            switch session.modality {
+            case .structured, .freeRide:
+                ZoneBreakdownBar(secondsByZone: session.onTargetSecondsByZone)
+            case .ftpTest:
+                EmptyView()
+            }
         }
         .padding(.vertical, 4)
     }
 
     @ViewBuilder
     private var trailingMetrics: some View {
+        switch session.modality {
+        case .ftpTest(_, let result):
+            ftpTrailingMetric(result: result)
+        case .structured, .freeRide:
+            workoutTrailingMetrics
+        }
+    }
+
+    @ViewBuilder
+    private func ftpTrailingMetric(result: FTPTestResult?) -> some View {
+        if let result {
+            HStack(alignment: .lastTextBaseline, spacing: 2) {
+                Text("\(result.measuredFTP)")
+                    .font(.title3.weight(.semibold))
+                    .monospacedDigit()
+                Text("W FTP")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        } else {
+            VStack(alignment: .trailing, spacing: 2) {
+                Text("\u{2014}")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text("No result")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var workoutTrailingMetrics: some View {
         VStack(alignment: .trailing, spacing: 2) {
             if let avg = session.avgPower {
                 HStack(alignment: .lastTextBaseline, spacing: 2) {
@@ -88,6 +154,26 @@ private struct WorkoutHistoryRow: View {
                 }
             }
         }
+    }
+}
+
+private struct FTPProtocolChip: View {
+    let kind: FTPTestKind
+
+    private var label: String {
+        switch kind {
+        case .twentyMinute: return "20-min"
+        case .ramp: return "Ramp"
+        }
+    }
+
+    var body: some View {
+        Text(label)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Color.secondary.opacity(0.15), in: Capsule())
     }
 }
 
@@ -263,7 +349,64 @@ private func makePreviewContainer(populated: Bool) -> ModelContainer {
         bikeWasConnected: false
     )
 
-    [endurance, max, recovery, bikeFree].forEach { context.insert($0) }
+    let rampTest = WorkoutSession(
+        name: "FTP Ramp Test",
+        transitionWarningDuration: 10,
+        completedAt: now.addingTimeInterval(-day * 1),
+        totalDuration: 18 * 60,
+        avgPower: 240,
+        maxPower: 380,
+        totalOutputKJ: 260,
+        totalDistance: 7_200,
+        totalCalories: 290,
+        avgHeartRate: 158,
+        maxHeartRate: 184,
+        ftpAtTime: 220,
+        maxHRAtTime: 188,
+        bikeWasConnected: true,
+        modality: .ftpTest(
+            protocol: .ramp,
+            result: FTPTestResult(measuredFTP: 255, sourcePower: 340)
+        )
+    )
+
+    let twentyMinTest = WorkoutSession(
+        name: "FTP Test",
+        transitionWarningDuration: 10,
+        completedAt: now.addingTimeInterval(-day * 30),
+        totalDuration: 45 * 60,
+        avgPower: 230,
+        maxPower: 320,
+        totalOutputKJ: 620,
+        totalDistance: 18_000,
+        totalCalories: 540,
+        avgHeartRate: 162,
+        maxHeartRate: 178,
+        ftpAtTime: 220,
+        maxHRAtTime: 188,
+        bikeWasConnected: true,
+        modality: .ftpTest(
+            protocol: .twentyMinute,
+            result: FTPTestResult(measuredFTP: 245, sourcePower: 258)
+        )
+    )
+
+    let abortedTest = WorkoutSession(
+        name: "FTP Ramp Test",
+        transitionWarningDuration: 10,
+        completedAt: now.addingTimeInterval(-day * 45),
+        totalDuration: 6 * 60,
+        avgPower: 140,
+        maxPower: 190,
+        avgHeartRate: 124,
+        maxHeartRate: 142,
+        ftpAtTime: 220,
+        maxHRAtTime: 188,
+        bikeWasConnected: true,
+        modality: .ftpTest(protocol: .ramp, result: nil)
+    )
+
+    [endurance, max, recovery, bikeFree, rampTest, twentyMinTest, abortedTest].forEach { context.insert($0) }
     endurance.intervals?.forEach { context.insert($0) }
     try? context.save()
     return container

@@ -25,6 +25,24 @@ final class WatchHRBroadcaster {
     private let healthStore = HKHealthStore()
     private var hrQuery: HKAnchoredObjectQuery?
 
+    /// Current trainer target watts as last published by the iPad over BLE.
+    /// `nil` when the iPad is not in ERG mode (or before we've received the first
+    /// notify/read). The Watch UI uses this as the baseline when the Crown starts
+    /// turning so the absolute target it sends back always matches what the iPad
+    /// will apply.
+    private(set) var currentTrainerTarget: Int?
+
+    /// Current trainer resistance level as last published by the iPad. Non-nil
+    /// means the iPad is in Level mode — the Crown drives this instead of target
+    /// watts, so we never kick the trainer back to ERG.
+    private(set) var currentTrainerResistance: Int?
+    /// Lower bound of the bike's supported resistance range as reported by the iPad.
+    /// `nil` when unknown. The Watch UI clamps Crown input to `[min, max]` in Level
+    /// mode so the displayed value always matches what the iPad will apply.
+    private(set) var trainerResistanceMin: Int?
+    /// Upper bound of the bike's supported resistance range.
+    private(set) var trainerResistanceMax: Int?
+
     private init() {}
 
     func start() {
@@ -45,16 +63,32 @@ final class WatchHRBroadcaster {
         centralDelegate?.updateHeartRate(bpm)
     }
 
+    /// Send the Watch's cumulative HR-based active-energy estimate to the iPad.
+    /// The iPad consumes the most recent value at workout end to decide whether
+    /// to top up Fitness "Total Calories" via a basal-energy delta sample.
+    func updateEnergy(_ kcal: Int) {
+        centralDelegate?.updateEnergy(kcal)
+    }
+
     /// Send a command from Watch to iPad (pause/resume/end). Byte values come from the
     /// shared `BLECommand` enum so they cannot drift from the iPad side.
     func sendWatchPaused() { centralDelegate?.sendWatchCommand(.pauseWorkout) }
     func sendWatchResumed() { centralDelegate?.sendWatchCommand(.resumeWorkout) }
     func sendWatchEnded() { centralDelegate?.sendWatchCommand(.endWorkout) }
 
-    /// Send a Digital Crown-driven target-watts delta to the host.
-    /// Encoded as a 2-byte little-endian `Int16`.
-    func sendTrainerAdjust(deltaWatts: Int16) {
-        centralDelegate?.sendTrainerAdjust(deltaWatts: deltaWatts)
+    /// Send a Digital Crown-driven absolute target watts to the host. The Watch
+    /// computes the new absolute target locally (baseline + accumulated ticks)
+    /// using `currentTrainerTarget`, so the value here is exactly what the iPad
+    /// will set on the trainer. Encoded as a 2-byte little-endian `Int16`.
+    func sendTrainerTarget(_ watts: Int) {
+        centralDelegate?.sendTrainerTarget(watts)
+    }
+
+    /// Send a Digital Crown-driven absolute resistance level. Same encoding as the
+    /// target channel. Watch UI only calls this when `currentTrainerResistance`
+    /// is non-nil — i.e. when the iPad is already in Level mode.
+    func sendTrainerResistance(_ level: Int) {
+        centralDelegate?.sendTrainerResistance(level)
     }
 
     // MARK: - Passive HR Monitoring
@@ -129,9 +163,9 @@ final class WatchHRBroadcaster {
         private var hrCharacteristic: CBCharacteristic?
         private var commandCharacteristic: CBCharacteristic?
         private var watchCommandCharacteristic: CBCharacteristic?
-        private var trainerAdjustCharacteristic: CBCharacteristic?
-        /// Set to true after receiving a startWorkout notification, cleared after the read completes.
-        private var awaitingWorkoutRead = false
+        private var trainerTargetCharacteristic: CBCharacteristic?
+        private var trainerResistanceCharacteristic: CBCharacteristic?
+        private var watchEnergyCharacteristic: CBCharacteristic?
 
         override init() {
             super.init()
@@ -148,7 +182,9 @@ final class WatchHRBroadcaster {
             hrCharacteristic = nil
             commandCharacteristic = nil
             watchCommandCharacteristic = nil
-            trainerAdjustCharacteristic = nil
+            trainerTargetCharacteristic = nil
+            trainerResistanceCharacteristic = nil
+            watchEnergyCharacteristic = nil
             manager = nil
         }
 
@@ -159,16 +195,33 @@ final class WatchHRBroadcaster {
             peripheral.writeValue(data, for: characteristic, type: .withResponse)
         }
 
+        func updateEnergy(_ kcal: Int) {
+            guard let peripheral = connectedPeripheral,
+                  let characteristic = watchEnergyCharacteristic else { return }
+            let clamped = UInt16(clamping: max(0, kcal))
+            let payload = withUnsafeBytes(of: clamped.littleEndian) { Data($0) }
+            peripheral.writeValue(payload, for: characteristic, type: .withoutResponse)
+        }
+
         func sendWatchCommand(_ command: BLECommand) {
             guard let peripheral = connectedPeripheral,
                   let characteristic = watchCommandCharacteristic else { return }
             peripheral.writeValue(Data([command.rawValue]), for: characteristic, type: .withoutResponse)
         }
 
-        func sendTrainerAdjust(deltaWatts: Int16) {
+        func sendTrainerTarget(_ watts: Int) {
             guard let peripheral = connectedPeripheral,
-                  let characteristic = trainerAdjustCharacteristic else { return }
-            let payload = withUnsafeBytes(of: deltaWatts.littleEndian) { Data($0) }
+                  let characteristic = trainerTargetCharacteristic else { return }
+            let clamped = Int16(clamping: max(0, watts))
+            let payload = withUnsafeBytes(of: clamped.littleEndian) { Data($0) }
+            peripheral.writeValue(payload, for: characteristic, type: .withoutResponse)
+        }
+
+        func sendTrainerResistance(_ level: Int) {
+            guard let peripheral = connectedPeripheral,
+                  let characteristic = trainerResistanceCharacteristic else { return }
+            let clamped = Int16(clamping: max(0, level))
+            let payload = withUnsafeBytes(of: clamped.littleEndian) { Data($0) }
             peripheral.writeValue(payload, for: characteristic, type: .withoutResponse)
         }
 
@@ -213,7 +266,15 @@ final class WatchHRBroadcaster {
                 self.connectedPeripheral = nil
                 self.hrCharacteristic = nil
                 self.commandCharacteristic = nil
-                self.trainerAdjustCharacteristic = nil
+                self.trainerTargetCharacteristic = nil
+                self.trainerResistanceCharacteristic = nil
+                self.watchEnergyCharacteristic = nil
+                // Drop any stale cached values so the Watch UI doesn't show data
+                // that may have changed while disconnected.
+                WatchHRBroadcaster.shared.currentTrainerTarget = nil
+                WatchHRBroadcaster.shared.currentTrainerResistance = nil
+                WatchHRBroadcaster.shared.trainerResistanceMin = nil
+                WatchHRBroadcaster.shared.trainerResistanceMax = nil
                 self.manager?.scanForPeripherals(
                     withServices: [BLEProtocol.serviceUUID],
                     options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
@@ -236,7 +297,9 @@ final class WatchHRBroadcaster {
                         BLEProtocol.hrCharUUID,
                         BLEProtocol.commandCharUUID,
                         BLEProtocol.watchCommandCharUUID,
-                        BLEProtocol.trainerAdjustCharUUID,
+                        BLEProtocol.trainerTargetCharUUID,
+                        BLEProtocol.trainerResistanceCharUUID,
+                        BLEProtocol.watchEnergyCharUUID,
                     ],
                     for: service
                 )
@@ -257,8 +320,12 @@ final class WatchHRBroadcaster {
                         self.hrCharacteristic = characteristic
                     }
                 } else if characteristic.uuid == BLEProtocol.commandCharUUID {
-                    print("WatchHRBroadcaster: found command characteristic, subscribing")
+                    print("WatchHRBroadcaster: found command characteristic, subscribing + reading")
                     peripheral.setNotifyValue(true, for: characteristic)
+                    // Proactive read: if the iPad already has a workout running, this fetches
+                    // its JSON so we navigate immediately instead of waiting for the iPad's
+                    // didSubscribeTo notification (which can be dropped on a flaky reconnect).
+                    peripheral.readValue(for: characteristic)
                     Task { @MainActor in
                         self.commandCharacteristic = characteristic
                     }
@@ -267,27 +334,74 @@ final class WatchHRBroadcaster {
                     Task { @MainActor in
                         self.watchCommandCharacteristic = characteristic
                     }
-                } else if characteristic.uuid == BLEProtocol.trainerAdjustCharUUID {
-                    print("WatchHRBroadcaster: found trainer-adjust characteristic, ready to send")
+                } else if characteristic.uuid == BLEProtocol.trainerTargetCharUUID {
+                    print("WatchHRBroadcaster: found trainer-target characteristic, subscribing + reading")
+                    peripheral.setNotifyValue(true, for: characteristic)
+                    peripheral.readValue(for: characteristic)
                     Task { @MainActor in
-                        self.trainerAdjustCharacteristic = characteristic
+                        self.trainerTargetCharacteristic = characteristic
+                    }
+                } else if characteristic.uuid == BLEProtocol.trainerResistanceCharUUID {
+                    print("WatchHRBroadcaster: found trainer-resistance characteristic, subscribing + reading")
+                    peripheral.setNotifyValue(true, for: characteristic)
+                    peripheral.readValue(for: characteristic)
+                    Task { @MainActor in
+                        self.trainerResistanceCharacteristic = characteristic
+                    }
+                } else if characteristic.uuid == BLEProtocol.watchEnergyCharUUID {
+                    print("WatchHRBroadcaster: found watch-energy characteristic, ready to send")
+                    Task { @MainActor in
+                        self.watchEnergyCharacteristic = characteristic
                     }
                 }
             }
         }
 
         nonisolated func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
-            guard characteristic.uuid == BLEProtocol.commandCharUUID else { return }
             if let error {
-                print("WatchHRBroadcaster: command characteristic error: \(error)")
+                print("WatchHRBroadcaster: \(characteristic.uuid) update error: \(error)")
                 return
             }
             guard let data = characteristic.value, !data.isEmpty else { return }
 
+            if characteristic.uuid == BLEProtocol.trainerTargetCharUUID {
+                guard data.count >= 2 else { return }
+                let unsigned = UInt16(data[0]) | (UInt16(data[1]) << 8)
+                let value = Int16(bitPattern: unsigned)
+                let resolved: Int? = (value == BLEProtocol.trainerTargetNoneSentinel) ? nil : Int(value)
+                Task { @MainActor in
+                    WatchHRBroadcaster.shared.currentTrainerTarget = resolved
+                }
+                return
+            }
+
+            if characteristic.uuid == BLEProtocol.trainerResistanceCharUUID {
+                // Payload: 6 bytes — three LE Int16s: current, min, max.
+                guard data.count >= 6 else { return }
+                func decode(_ offset: Int) -> Int? {
+                    let unsigned = UInt16(data[offset]) | (UInt16(data[offset + 1]) << 8)
+                    let value = Int16(bitPattern: unsigned)
+                    return value == BLEProtocol.trainerResistanceNoneSentinel ? nil : Int(value)
+                }
+                let current = decode(0)
+                let lo = decode(2)
+                let hi = decode(4)
+                Task { @MainActor in
+                    WatchHRBroadcaster.shared.currentTrainerResistance = current
+                    WatchHRBroadcaster.shared.trainerResistanceMin = lo
+                    WatchHRBroadcaster.shared.trainerResistanceMax = hi
+                }
+                return
+            }
+
+            guard characteristic.uuid == BLEProtocol.commandCharUUID else { return }
+
+            // The iPad uses the same characteristic for two payload shapes: 1-byte command
+            // notifications (start/pause/resume/end) and multi-byte read responses carrying
+            // the workout JSON. Discriminate by length — using a stateful flag here gets
+            // wedged if a read is interrupted, silently dropping every subsequent command.
             Task { @MainActor in
-                if self.awaitingWorkoutRead {
-                    // This is a read response containing workout JSON
-                    self.awaitingWorkoutRead = false
+                if data.count > 1 {
                     self.handleWorkoutData(data)
                     return
                 }
@@ -299,7 +413,6 @@ final class WatchHRBroadcaster {
                 switch command {
                 case .startWorkout:
                     print("WatchHRBroadcaster: received startWorkout command, reading workout data")
-                    self.awaitingWorkoutRead = true
                     peripheral.readValue(for: characteristic)
                 case .pauseWorkout:
                     print("WatchHRBroadcaster: received pauseWorkout command")

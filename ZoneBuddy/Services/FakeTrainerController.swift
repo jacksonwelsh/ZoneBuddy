@@ -51,6 +51,12 @@ final class FakeTrainerController: TrainerControlling {
         mode = .manualResistance
         currentResistanceLevel = level
         currentTargetWatts = nil
+        #if DEBUG
+        // Level mode means no power target — drop the simulated bike to an
+        // easy-spin baseline so the rider visually sees the trainer released
+        // instead of the previous ERG target lingering in the power readout.
+        SimulatorFakes.shared.targetPower = 80
+        #endif
     }
 
     func pause() async {}

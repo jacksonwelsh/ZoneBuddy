@@ -180,20 +180,71 @@ struct WorkoutPlayerView_iPhone: View {
             )
             .presentationDetents([.medium, .large])
         }
-        .onChange(of: BLEHeartRateScanner.shared.watchTrainerAdjustDelta) { _, delta in
-            guard let delta else { return }
-            viewModel.applyTrainerAdjustment(deltaWatts: delta)
-            BLEHeartRateScanner.shared.resetWatchTrainerAdjustDelta()
+        .onChange(of: BLEHeartRateScanner.shared.watchTrainerTargetWrite) { _, target in
+            guard let target else { return }
+            viewModel.applyTrainerTarget(absoluteWatts: target)
+            BLEHeartRateScanner.shared.resetWatchTrainerTargetWrite()
+        }
+        .onChange(of: BLEHeartRateScanner.shared.watchTrainerResistanceWrite) { _, level in
+            guard let level else { return }
+            viewModel.applyTrainerResistance(absoluteLevel: level)
+            BLEHeartRateScanner.shared.resetWatchTrainerResistanceWrite()
+        }
+        .onChange(of: viewModel.trainerController?.currentTargetWatts) { _, _ in
+            publishFullTrainerState()
+        }
+        .onChange(of: viewModel.trainerController?.currentResistanceLevel) { _, _ in
+            publishFullTrainerState()
+        }
+        .onChange(of: viewModel.trainerController?.capabilities?.supportedResistanceRange) { _, _ in
+            publishFullTrainerState()
+        }
+        .onChange(of: viewModel.trainerController?.mode) { _, _ in
+            publishFullTrainerState()
         }
     }
 
+    /// Re-publish the full trainer state to the Watch: target watts (with `nil`
+    /// sentinel when not in ERG), and resistance current + bounds. The Watch
+    /// derives its Crown control mode from whichever of target/resistance is
+    /// non-sentinel; clearing the departing mode first ensures the Watch never
+    /// sees a transient state where both are non-nil with conflicting values.
+    private func publishFullTrainerState() {
+        let controller = viewModel.trainerController
+        let range = controller?.capabilities?.supportedResistanceRange
+        let minLevel = range.map { Int($0.lowerBound.rounded()) }
+        let maxLevel = range.map { Int($0.upperBound.rounded()) }
+
+        switch controller?.mode {
+        case .erg:
+            BLEHeartRateScanner.shared.publishTrainerResistance(current: nil, min: minLevel, max: maxLevel)
+            BLEHeartRateScanner.shared.publishTrainerTarget(controller?.currentTargetWatts)
+        case .manualResistance:
+            BLEHeartRateScanner.shared.publishTrainerTarget(nil)
+            BLEHeartRateScanner.shared.publishTrainerResistance(
+                current: controller?.currentResistanceLevel.map { Int($0.rounded()) },
+                min: minLevel,
+                max: maxLevel
+            )
+        default:
+            BLEHeartRateScanner.shared.publishTrainerTarget(nil)
+            BLEHeartRateScanner.shared.publishTrainerResistance(current: nil, min: minLevel, max: maxLevel)
+        }
+    }
+
+    /// Icon mirrors the inline trainer header: `scope` for ERG (auto-targeting
+    /// watts), `dial.medium` for Level (fixed resistance, used during warmups
+    /// and any rider-initiated Level switch). Lets the rider see at a glance —
+    /// without opening the sheet — that the workout has handed control over to
+    /// ERG when the warmup ends.
     private var trainerButton: some View {
         Button {
             showTrainerSheet = true
         } label: {
-            Image(systemName: "scope")
+            Image(systemName: viewModel.trainerController?.mode == .manualResistance ? "dial.medium" : "scope")
                 .font(.system(size: 16, weight: .bold))
                 .foregroundStyle(fgColor)
+                .contentTransition(.symbolEffect(.replace))
                 .frame(width: 44, height: 44)
                 .background(
                     isBikeConnected

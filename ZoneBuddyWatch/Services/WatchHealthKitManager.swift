@@ -78,7 +78,7 @@ final class WatchHealthKitManager: HealthKitWorkoutRecording, HeartRateStreaming
         // No-op: Watch collects HR natively via HKLiveWorkoutDataSource
     }
 
-    func endWorkout(endDate: Date, metadata: [String: Any]) async {
+    func endWorkout(endDate: Date, watchEnergyEstimateKcal: Double?, metadata: [String: Any]) async {
         guard let session, let builder else { return }
         self.session = nil
         self.builder = nil
@@ -174,6 +174,12 @@ final class WatchHealthKitManager: HealthKitWorkoutRecording, HeartRateStreaming
 
             let kcal = sum.doubleValue(for: .kilocalorie())
             onCaloriesUpdate(kcal)
+            // Forward to BLE so the iPad can use this HR-based estimate at workout
+            // finalization to top up Fitness "Total Calories" via a basal delta sample.
+            let kcalInt = Int(kcal.rounded())
+            Task { @MainActor in
+                WatchHRBroadcaster.shared.updateEnergy(kcalInt)
+            }
         }
     }
 }

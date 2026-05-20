@@ -191,12 +191,22 @@ final class WorkoutPlayerViewModel {
     }
 
     var currentTotalCalories: Int? {
-        // Prefer Watch's native calorie calculation when available
+        let powerBased = WorkoutSampleAggregator.estimatedCalories(in: allBikeSamples)
+        #if os(iOS)
+        // Mirror the finalization policy: HealthKit and the persisted session both
+        // get `max(power_based, watch_HR)`, so the in-workout display tracks the
+        // same value the history row and Fitness will show afterwards.
+        if let watchKcal = BLEHeartRateScanner.shared.latestWatchEnergyKcal,
+           watchKcal > (powerBased ?? 0) {
+            return watchKcal
+        }
+        #else
+        // On watchOS the live builder exposes its own running estimate.
         if let live = healthKitManager?.liveCalories {
             return Int(live)
         }
-        // Always compute from integrated power output — bike-reported calories are unreliable
-        return WorkoutSampleAggregator.estimatedCalories(in: allBikeSamples)
+        #endif
+        return powerBased
     }
 
     var currentTotalOutputKJ: Double? {
@@ -460,7 +470,10 @@ final class WorkoutPlayerViewModel {
                     self.speakCurrentLabel()
                     self.handleFTPTestIntervalTransition(from: previousIndex, to: self.currentIntervalIndex)
                     #if os(iOS)
-                    self.applyERGForCurrentInterval()
+                    let prevWasWarmup = previousIndex >= 0
+                        && previousIndex < self.intervals.count
+                        && self.intervals[previousIndex].isWarmup
+                    self.applyERGForCurrentInterval(previousIntervalWasWarmup: prevWasWarmup)
                     #endif
                     self.lowCadenceTickCount = 0
                 }
@@ -476,11 +489,12 @@ final class WorkoutPlayerViewModel {
     }
 
     #if os(iOS)
-    /// Watches cadence during ramp steps and auto-ends the test when the rider
-    /// can no longer turn the cranks fast enough to make the trainer hold the
-    /// ERG target (the conventional "failure" signal — Zwift / TrainerRoad
-    /// both end on cadence collapse, since at that point the rider is grinding
-    /// and the next sample wouldn't add useful data).
+    /// Watches cadence during ramp steps and skips the rider into the cooldown
+    /// when they can no longer turn the cranks fast enough to make the trainer
+    /// hold the ERG target. Cadence collapse is the conventional "failure"
+    /// signal (Zwift / TrainerRoad both detect failure this way) — once the
+    /// rider blows up, additional ramp samples wouldn't add useful data, so we
+    /// freeze the FTP window and drop them into the 5-minute easy spin.
     private func checkRampTestFailure() {
         guard let interval = currentInterval,
               interval.targetWatts != nil,
@@ -506,12 +520,47 @@ final class WorkoutPlayerViewModel {
         if cadence < Self.rampFailureCadenceThreshold {
             lowCadenceTickCount += 1
             if lowCadenceTickCount >= Self.rampFailureTickCount {
-                isFinished = true
-                isRunning = false
-                endWorkout()
+                jumpToCooldownAfterRampFailure()
             }
         } else {
             lowCadenceTickCount = 0
+        }
+    }
+
+    /// Skip the remaining ramp steps and drop the rider into the cooldown
+    /// interval (the last interval in the ramp protocol). Closes the FTP
+    /// sampling window at the moment of failure and releases ERG so the rider
+    /// can spin easy — `applyERGForCurrentInterval` is a no-op on cooldown
+    /// (no zone, no target), so the trainer would otherwise stay locked at
+    /// the wattage they just failed.
+    private func jumpToCooldownAfterRampFailure() {
+        let previousIndex = currentIntervalIndex
+        let cooldownIndex = intervals.count - 1
+        guard cooldownIndex > previousIndex,
+              cooldownIndex >= 0,
+              intervals[cooldownIndex].targetWatts == nil else {
+            // No cooldown interval to skip into — fall back to ending the
+            // workout so we don't strand the user mid-ramp.
+            isFinished = true
+            isRunning = false
+            endWorkout()
+            return
+        }
+
+        let cooldownStartSeconds = intervals.prefix(cooldownIndex)
+            .reduce(0) { $0 + TimeInterval($1.duration) }
+
+        totalSecondsAccumulatedBeforePause = cooldownStartSeconds
+        workoutStartDate = dateProvider()
+        totalElapsedSeconds = Int(cooldownStartSeconds)
+        recalculateIntervalState(totalElapsed: cooldownStartSeconds)
+        lowCadenceTickCount = 0
+
+        handleFTPTestIntervalTransition(from: previousIndex, to: currentIntervalIndex)
+        speakCurrentLabel()
+
+        if let controller = trainerController, controller.mode == .erg {
+            Task { await controller.disableERG() }
         }
     }
     #endif
@@ -606,10 +655,18 @@ final class WorkoutPlayerViewModel {
     // MARK: - ERG / Trainer Control
 
     #if os(iOS)
-    /// Sets the trainer to the current interval's zone-band midpoint, unless
-    /// the rider has manually nudged power (sticky override) or the interval
-    /// is a warmup. Called on initial start and on every interval transition.
-    private func applyERGForCurrentInterval() {
+    /// Drives the trainer for the current interval. Warmups park the trainer in
+    /// Level mode at level 0 so the rider can spin up at their own pace; active
+    /// intervals snap to the zone-band midpoint (or explicit `targetWatts`) via
+    /// ERG. Called on initial start and on every interval transition.
+    ///
+    /// `previousIntervalWasWarmup` tells us we just crossed from a warmup into
+    /// the work portion of the ride. In that case we force ERG even if the
+    /// trainer is currently in `.manualResistance` — the Level mode was set by
+    /// us at the start of warmup, so the rider's level nudges don't count as
+    /// "user opted out of ERG". Mid-workout Level switches (non-warmup origin)
+    /// still block auto-ERG; the trainer-sheet mode picker is the path back.
+    private func applyERGForCurrentInterval(previousIntervalWasWarmup: Bool = false) {
         guard let controller = trainerController,
               controller.capabilities?.powerTargetSettingSupported == true else {
             ergAvailable = false
@@ -634,15 +691,31 @@ final class WorkoutPlayerViewModel {
         guard let interval = currentInterval else { return }
 
         // Explicit per-interval target (ramp test steps) drives the trainer
-        // unconditionally — the protocol itself defines the workout, so the
-        // user-override flag doesn't apply.
+        // unconditionally — the protocol itself defines the workout, so it
+        // beats both the warmup branch (ramp steps carry `zone: nil`) and any
+        // user Level-mode opt-out.
         if let explicit = interval.targetWatts {
             Task { await controller.enableERG(targetWatts: explicit) }
             return
         }
 
-        // Zone-midpoint path: skip warmup intervals, respect sticky override.
-        if interval.isWarmup { return }
+        // Warmup: drop into Level mode at 0 so the rider can spin up freely.
+        // If the trainer doesn't support resistance targets, release any held
+        // ERG state instead — there's no zone to drive to during warmup.
+        if interval.isWarmup {
+            if controller.capabilities?.resistanceTargetSettingSupported == true {
+                Task { await controller.setResistanceLevel(0) }
+            } else if controller.mode == .erg {
+                Task { await controller.disableERG() }
+            }
+            return
+        }
+
+        // User has explicitly chosen Level mode mid-workout — don't yank them
+        // back into ERG at the next interval boundary. The carve-out for
+        // `previousIntervalWasWarmup` covers the auto-applied warmup case.
+        if controller.mode == .manualResistance && !previousIntervalWasWarmup { return }
+
         guard let target = ergTargetWattsForCurrentInterval else { return }
         if controller.ergUserOverridden { return }
 
@@ -657,11 +730,25 @@ final class WorkoutPlayerViewModel {
         Task { await controller.enableERG(targetWatts: target) }
     }
 
-    /// Apply a Watch Digital Crown adjustment. Forwards to the trainer
-    /// controller, which also sets the sticky override flag.
-    func applyTrainerAdjustment(deltaWatts: Int) {
+    /// Apply an absolute target watts written by the Watch via BLE. The Watch
+    /// computes the new absolute target locally (baseline + Crown ticks) using
+    /// the value the iPad publishes on `trainerTargetCharUUID`. We convert back
+    /// to a delta from the iPad's current value and route through
+    /// `adjustTargetWatts(by:)` to preserve its sticky-override semantics
+    /// (stops interval boundaries from snapping away from the rider's nudge).
+    func applyTrainerTarget(absoluteWatts: Int) {
         guard let controller = trainerController else { return }
-        Task { await controller.adjustTargetWatts(by: deltaWatts) }
+        let delta = absoluteWatts - (controller.currentTargetWatts ?? 0)
+        Task { await controller.adjustTargetWatts(by: delta) }
+    }
+
+    /// Apply an absolute resistance level written by the Watch via BLE. The Watch
+    /// only writes here when the iPad has already published a non-nil resistance
+    /// value (i.e. is in Level mode), so this never switches the active mode —
+    /// it just sets the new level.
+    func applyTrainerResistance(absoluteLevel: Int) {
+        guard let controller = trainerController else { return }
+        Task { await controller.setResistanceLevel(Double(absoluteLevel)) }
     }
     #endif
 
@@ -802,6 +889,14 @@ final class WorkoutPlayerViewModel {
         allHRSamples = []
         watchHRBuffer = []
         lastBufferedHR = nil
+        // Cached cumulative watch-energy estimate is owned by a singleton and
+        // would otherwise survive across workouts. If the Watch app doesn't
+        // broadcast during this session (Watch off, BLE not reconnected, etc.)
+        // we'd keep the previous workout's total — `max(power, stale_watch)`
+        // then locks the displayed and HealthKit-published calorie count to
+        // whatever the last session was. Reset so a missing Watch falls back
+        // cleanly to the power-based number.
+        BLEHeartRateScanner.shared.resetLatestWatchEnergyKcal()
 
         // Always start HR streaming immediately — BLE-based streamers (iPad)
         // don't need HealthKit and must not wait for authorization.
@@ -942,7 +1037,7 @@ final class WorkoutPlayerViewModel {
         if let healthKitManager {
             let endDate = dateProvider()
             Task {
-                await healthKitManager.endWorkout(endDate: endDate, metadata: [:])
+                await healthKitManager.endWorkout(endDate: endDate, watchEnergyEstimateKcal: nil, metadata: [:])
             }
         }
 
@@ -983,7 +1078,17 @@ final class WorkoutPlayerViewModel {
         let heartRates = allHRSamples.isEmpty ? bikeHeartRates : allHRSamples
 
         let totalOutputKJ = WorkoutSampleAggregator.totalOutputKJ(in: allBikeSamples) ?? 0
-        let computedCalories = WorkoutSampleAggregator.estimatedCalories(in: allBikeSamples) ?? 0
+        let powerBasedCalories = WorkoutSampleAggregator.estimatedCalories(in: allBikeSamples) ?? 0
+
+        // Mirror the HealthKit recorder's max(power, HR) policy so the in-app
+        // history reflects the same calorie value we publish to Apple Health.
+        let watchEnergyKcal: Double? = BLEHeartRateScanner.shared.latestWatchEnergyKcal.map(Double.init)
+        let displayedCalories: Int
+        if let watchKcal = watchEnergyKcal, Int(watchKcal) > powerBasedCalories {
+            displayedCalories = Int(watchKcal)
+        } else {
+            displayedCalories = powerBasedCalories
+        }
 
         let summaryAvgPower = powers.isEmpty ? 0 : powers.reduce(0, +) / powers.count
         let summaryMaxPower = powers.max() ?? 0
@@ -994,7 +1099,7 @@ final class WorkoutPlayerViewModel {
             avgPower: summaryAvgPower,
             maxPower: summaryMaxPower,
             totalDistance: computedDistanceMeters,
-            totalCalories: computedCalories,
+            totalCalories: displayedCalories,
             totalOutputKJ: totalOutputKJ,
             avgHeartRate: summaryAvgHR,
             maxHeartRate: summaryMaxHR,
@@ -1007,7 +1112,7 @@ final class WorkoutPlayerViewModel {
                 avgPower: summaryAvgPower,
                 maxPower: summaryMaxPower,
                 totalOutputKJ: totalOutputKJ,
-                computedCalories: computedCalories,
+                computedCalories: displayedCalories,
                 avgHeartRate: summaryAvgHR,
                 maxHeartRate: summaryMaxHR
             )
@@ -1038,6 +1143,8 @@ final class WorkoutPlayerViewModel {
             filteredRemaining = remaining
         }
 
+        // `watchEnergyKcal` was captured above when computing `displayedCalories` so
+        // the in-app summary and the HealthKit `.activeEnergyBurned` sample agree.
         Task {
             if !filteredRemaining.isEmpty {
                 await healthKitManager.addSamples(filteredRemaining)
@@ -1045,7 +1152,7 @@ final class WorkoutPlayerViewModel {
             if !finalHRSamples.isEmpty {
                 await healthKitManager.addHeartRateSamples(finalHRSamples)
             }
-            await healthKitManager.endWorkout(endDate: endDate, metadata: metadata)
+            await healthKitManager.endWorkout(endDate: endDate, watchEnergyEstimateKcal: watchEnergyKcal, metadata: metadata)
         }
         #endif
     }
@@ -1058,6 +1165,25 @@ final class WorkoutPlayerViewModel {
         avgHeartRate: Int?,
         maxHeartRate: Int?
     ) {
+        let modality: SessionModality = {
+            if let kind = ftpTestKind {
+                let sourcePower: Int? = {
+                    switch kind {
+                    case .twentyMinute: return ftpTestAvgPower
+                    case .ramp: return ftpTestBestMinutePower
+                    }
+                }()
+                let result: FTPTestResult? = {
+                    guard let measured = computedFTPFromTest, let source = sourcePower else {
+                        return nil
+                    }
+                    return FTPTestResult(measuredFTP: measured, sourcePower: source)
+                }()
+                return .ftpTest(protocol: kind, result: result)
+            }
+            return mode.isFreeRide ? .freeRide : .structured
+        }()
+
         let session = WorkoutSession(
             templateID: templateID,
             name: workoutName,
@@ -1077,7 +1203,7 @@ final class WorkoutPlayerViewModel {
             ftpAtTime: settings.functionalThresholdPower,
             maxHRAtTime: settings.maxHeartRate,
             bikeWasConnected: isConnectedToBike,
-            isFreeRide: mode.isFreeRide
+            modality: modality
         )
 
         let snapshots: [SessionInterval] = mode.isFreeRide

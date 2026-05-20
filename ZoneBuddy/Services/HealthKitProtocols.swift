@@ -9,7 +9,12 @@ protocol HealthKitWorkoutRecording {
     func startWorkout(startDate: Date) async -> Bool
     func addSamples(_ samples: [BikeDataSample]) async
     func addHeartRateSamples(_ samples: [(bpm: Int, date: Date)]) async
-    func endWorkout(endDate: Date, metadata: [String: Any]) async
+    /// `watchEnergyEstimateKcal` is the Watch's cumulative HR-based active-energy
+    /// estimate (passed in from the BLE-cached value). When provided and greater
+    /// than the recorder's own power-based active kcal, the iOS recorder writes
+    /// a `.basalEnergyBurned` summary sample for the delta so Fitness's "Total
+    /// Calories" reflects the Watch's HR-based estimate.
+    func endWorkout(endDate: Date, watchEnergyEstimateKcal: Double?, metadata: [String: Any]) async
     func pauseWorkout()
     func resumeWorkout()
 }

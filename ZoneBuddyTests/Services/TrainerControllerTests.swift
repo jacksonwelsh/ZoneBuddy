@@ -143,4 +143,52 @@ struct TrainerControllerTests {
 
         #expect(controller.lastError == .controlLost)
     }
+
+    // MARK: - Level mode
+
+    @Test
+    func setResistanceLevelClampsToSupportedRange() async {
+        let bike = MockFTMSBike(capabilities: defaultCapabilities())
+        let controller = LiveTrainerController(bike: bike)
+
+        await controller.setResistanceLevel(-5)     // below 0
+        await controller.setResistanceLevel(200)    // above 100
+
+        #expect(bike.setResistanceCalls == [0, 100])
+        #expect(controller.currentResistanceLevel == 100)
+    }
+
+    @Test
+    func setResistanceLevelTransitionsFromERGToManualResistance() async {
+        let bike = MockFTMSBike(capabilities: defaultCapabilities())
+        let controller = LiveTrainerController(bike: bike)
+
+        await controller.enableERG(targetWatts: 200)
+        #expect(controller.mode == .erg)
+
+        await controller.setResistanceLevel(40)
+
+        #expect(controller.mode == .manualResistance)
+        #expect(controller.currentResistanceLevel == 40)
+        // currentTargetWatts cleared so the ERG readout doesn't show a stale value.
+        #expect(controller.currentTargetWatts == nil)
+    }
+
+    @Test
+    func enableERGFromManualResistanceFlipsModeBack() async {
+        let bike = MockFTMSBike(capabilities: defaultCapabilities())
+        let controller = LiveTrainerController(bike: bike)
+
+        await controller.setResistanceLevel(50)
+        #expect(controller.mode == .manualResistance)
+
+        await controller.enableERG(targetWatts: 175)
+
+        #expect(controller.mode == .erg)
+        #expect(controller.currentTargetWatts == 175)
+        // Resistance level is left in place — it's still the trainer's last
+        // known value if the user nudges back to Level mode; ERG only governs
+        // the active control path, not the cached resistance.
+        #expect(controller.currentResistanceLevel == 50)
+    }
 }

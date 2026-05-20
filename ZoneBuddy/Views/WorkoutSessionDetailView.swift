@@ -19,13 +19,25 @@ struct WorkoutSessionDetailView: View {
         return false
     }
 
+    private var isFTPTest: Bool {
+        if case .ftpTest = session.modality { return true }
+        return false
+    }
+
+    private var isFreeRide: Bool {
+        if case .freeRide = session.modality { return true }
+        return false
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 header
                 structureSection
                 metricsGrid
-                powerZoneSection
+                if !isFTPTest {
+                    powerZoneSection
+                }
                 hrZoneSection
 
             }
@@ -78,6 +90,8 @@ struct WorkoutSessionDetailView: View {
     private var header: some View {
         if isCompletion {
             completionHeader
+        } else if isFTPTest {
+            ftpResultHeader
         } else {
             historyHeader
         }
@@ -91,6 +105,49 @@ struct WorkoutSessionDetailView: View {
             Text(session.totalDuration.formattedDuration)
                 .font(.system(size: 40, weight: .bold, design: .rounded))
                 .monospacedDigit()
+        }
+    }
+
+    @ViewBuilder
+    private var ftpResultHeader: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(session.completedAt.formatted(date: .complete, time: .shortened))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            if case .ftpTest(let kind, let result) = session.modality {
+                if let result {
+                    HStack(alignment: .lastTextBaseline, spacing: 4) {
+                        Text("\(result.measuredFTP)")
+                            .font(.system(size: 56, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                        Text("W FTP")
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text(formulaCaption(kind: kind, sourcePower: result.sourcePower))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("No result recorded")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(kind == .ramp
+                         ? "The ramp ended before a full 1-minute window of power data was captured."
+                         : "Not enough power data was captured to compute an FTP.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private func formulaCaption(kind: FTPTestKind, sourcePower: Int) -> String {
+        switch kind {
+        case .twentyMinute:
+            return "20-min avg: \(sourcePower) W \u{00d7} 0.95"
+        case .ramp:
+            return "Best 1-min: \(sourcePower) W \u{00d7} 0.75"
         }
     }
 
@@ -197,9 +254,9 @@ struct WorkoutSessionDetailView: View {
 
     private var powerZoneSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(session.isFreeRide ? "Time in Power Zones" : "Power Zones — On-Target")
+            Text(isFreeRide ? "Time in Power Zones" : "Power Zones — On-Target")
                 .font(.headline)
-            Text(session.isFreeRide
+            Text(isFreeRide
                 ? "Total time you spent in each power zone."
                 : "Time you held the prescribed zone during each target interval.")
                 .font(.caption)
@@ -209,7 +266,7 @@ struct WorkoutSessionDetailView: View {
                 ForEach(PowerZone.allCases) { zone in
                     let zoneSeconds = session.scheduledSecondsByZone[zone] ?? 0
                     if zoneSeconds > 0 {
-                        if session.isFreeRide {
+                        if isFreeRide {
                             PowerZoneAdherenceRow(
                                 zone: zone,
                                 onTargetSeconds: zoneSeconds,

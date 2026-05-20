@@ -14,11 +14,22 @@ final class BLEHeartRateScanner: HeartRateStreaming {
     private(set) var watchPausedWorkout = false
     private(set) var watchResumedWorkout = false
     private(set) var watchEndedWorkout = false
-    /// Most recent target-watts delta written by the Watch over BLE. Players
-    /// observe via `.onChange` and consume the value, then reset to nil. The
-    /// pulse semantics (vs. cumulative total) keeps the routing path identical
-    /// to the existing pause/resume flags.
-    private(set) var watchTrainerAdjustDelta: Int?
+    /// Most recent absolute target watts written by the Watch over BLE. Players
+    /// observe via `.onChange` and consume the value, then reset to nil. Pulse
+    /// semantics (vs. cumulative total) match the existing pause/resume flags.
+    /// The Watch now computes the absolute target locally (baseline + Crown ticks)
+    /// using the value the iPad notifies back on `trainerTargetCharUUID`.
+    private(set) var watchTrainerTargetWrite: Int?
+    /// Most recent absolute resistance level written by the Watch over BLE. Same pulse
+    /// semantics as `watchTrainerTargetWrite`. The Watch chooses between writing target
+    /// vs. resistance based on which value the iPad most recently published — so it
+    /// drives the iPad's active mode rather than kicking it back to ERG.
+    private(set) var watchTrainerResistanceWrite: Int?
+    /// Cumulative HR-based active-energy estimate (kcal) most recently reported by the Watch
+    /// over BLE. Updated whenever the Watch's `HKLiveWorkoutBuilder` posts a new energy
+    /// statistic. Consumed at workout finalization to decide whether to top up Fitness's
+    /// "Total Calories" via a basal-energy delta sample.
+    private(set) var latestWatchEnergyKcal: Int?
     private var peripheralDelegate: PeripheralDelegate?
 
     /// Workout JSON the Watch reads after receiving a start notification.
@@ -32,7 +43,24 @@ final class BLEHeartRateScanner: HeartRateStreaming {
     func resetWatchPausedWorkout() { watchPausedWorkout = false }
     func resetWatchResumedWorkout() { watchResumedWorkout = false }
     func resetWatchEndedWorkout() { watchEndedWorkout = false }
-    func resetWatchTrainerAdjustDelta() { watchTrainerAdjustDelta = nil }
+    func resetWatchTrainerTargetWrite() { watchTrainerTargetWrite = nil }
+    func resetWatchTrainerResistanceWrite() { watchTrainerResistanceWrite = nil }
+    func resetLatestWatchEnergyKcal() { latestWatchEnergyKcal = nil }
+
+    /// Push the current trainer target watts to subscribed Watches. Pass `nil` when
+    /// the host is not in ERG mode (the peripheral encodes `-1` as the "no target"
+    /// sentinel so the Watch can distinguish that from a real 0W target).
+    func publishTrainerTarget(_ targetWatts: Int?) {
+        peripheralDelegate?.publishTrainerTarget(targetWatts)
+    }
+
+    /// Push the current resistance level + supported bounds to subscribed Watches.
+    /// Pass `current: nil` when the host is not in Level mode; pass `min`/`max: nil`
+    /// when the bike's resistance range isn't known. The Watch uses bounds to clamp
+    /// Crown input so the value it shows always matches what the host will apply.
+    func publishTrainerResistance(current: Int?, min: Int?, max: Int?) {
+        peripheralDelegate?.publishTrainerResistance(current: current, min: min, max: max)
+    }
 
     func startMonitoring(from startDate: Date) {
         guard peripheralDelegate == nil else { return }
@@ -57,9 +85,19 @@ final class BLEHeartRateScanner: HeartRateStreaming {
                     }
                 }
             },
-            onTrainerAdjust: { [weak self] delta in
+            onTrainerTargetWrite: { [weak self] target in
                 Task { @MainActor [weak self] in
-                    self?.watchTrainerAdjustDelta = delta
+                    self?.watchTrainerTargetWrite = target
+                }
+            },
+            onTrainerResistanceWrite: { [weak self] level in
+                Task { @MainActor [weak self] in
+                    self?.watchTrainerResistanceWrite = level
+                }
+            },
+            onWatchEnergy: { [weak self] kcal in
+                Task { @MainActor [weak self] in
+                    self?.latestWatchEnergyKcal = kcal
                 }
             }
         )
@@ -74,6 +112,7 @@ final class BLEHeartRateScanner: HeartRateStreaming {
         peripheralDelegate?.stop()
         peripheralDelegate = nil
         latestHeartRate = nil
+        latestWatchEnergyKcal = nil
         pendingWorkoutData.withLock { $0 = nil }
     }
 
@@ -105,19 +144,40 @@ final class BLEHeartRateScanner: HeartRateStreaming {
         private let onHeartRate: @Sendable (Int) -> Void
         private let getWorkoutData: @Sendable () -> Data?
         private let onWatchCommand: @Sendable (BLECommand) -> Void
-        private let onTrainerAdjust: @Sendable (Int) -> Void
+        private let onTrainerTargetWrite: @Sendable (Int) -> Void
+        private let onTrainerResistanceWrite: @Sendable (Int) -> Void
+        private let onWatchEnergy: @Sendable (Int) -> Void
         private var commandCharacteristic: CBMutableCharacteristic?
+        private var trainerTargetCharacteristic: CBMutableCharacteristic?
+        private var trainerResistanceCharacteristic: CBMutableCharacteristic?
+        /// Last value we published on `trainerTargetCharUUID`. Used to (a) seed read
+        /// responses and (b) re-send to a newly subscribed Watch.
+        private let lastPublishedTarget = OSAllocatedUnfairLock<Int16>(initialState: BLEProtocol.trainerTargetNoneSentinel)
+        /// Last payload (6 bytes: current, min, max) we published on `trainerResistanceCharUUID`.
+        /// Seeded with all sentinels so reads before any publish answer "no data".
+        private let lastPublishedResistance: OSAllocatedUnfairLock<Data> = {
+            let sentinel = BLEProtocol.trainerResistanceNoneSentinel.littleEndian
+            var data = Data()
+            withUnsafeBytes(of: sentinel) { data.append(contentsOf: $0) }
+            withUnsafeBytes(of: sentinel) { data.append(contentsOf: $0) }
+            withUnsafeBytes(of: sentinel) { data.append(contentsOf: $0) }
+            return OSAllocatedUnfairLock(initialState: data)
+        }()
 
         init(
             onHeartRate: @escaping @Sendable (Int) -> Void,
             getWorkoutData: @escaping @Sendable () -> Data?,
             onWatchCommand: @escaping @Sendable (BLECommand) -> Void,
-            onTrainerAdjust: @escaping @Sendable (Int) -> Void
+            onTrainerTargetWrite: @escaping @Sendable (Int) -> Void,
+            onTrainerResistanceWrite: @escaping @Sendable (Int) -> Void,
+            onWatchEnergy: @escaping @Sendable (Int) -> Void
         ) {
             self.onHeartRate = onHeartRate
             self.getWorkoutData = getWorkoutData
             self.onWatchCommand = onWatchCommand
-            self.onTrainerAdjust = onTrainerAdjust
+            self.onTrainerTargetWrite = onTrainerTargetWrite
+            self.onTrainerResistanceWrite = onTrainerResistanceWrite
+            self.onWatchEnergy = onWatchEnergy
             super.init()
             print("BLEHeartRateScanner: creating CBPeripheralManager")
             manager = CBPeripheralManager(delegate: self, queue: nil)
@@ -128,6 +188,44 @@ final class BLEHeartRateScanner: HeartRateStreaming {
             manager?.removeAllServices()
             manager = nil
             commandCharacteristic = nil
+            trainerTargetCharacteristic = nil
+            trainerResistanceCharacteristic = nil
+        }
+
+        /// Encode `targetWatts` as 2-byte LE Int16 and notify subscribed centrals.
+        /// `nil` becomes the `-1` "no target" sentinel.
+        func publishTrainerTarget(_ targetWatts: Int?) {
+            let encoded: Int16
+            if let w = targetWatts {
+                encoded = Int16(clamping: w)
+            } else {
+                encoded = BLEProtocol.trainerTargetNoneSentinel
+            }
+            lastPublishedTarget.withLock { $0 = encoded }
+            guard let manager, let characteristic = trainerTargetCharacteristic else { return }
+            let payload = withUnsafeBytes(of: encoded.littleEndian) { Data($0) }
+            let sent = manager.updateValue(payload, for: characteristic, onSubscribedCentrals: nil)
+            print("BLEHeartRateScanner: published trainer target \(encoded)W, queued: \(sent)")
+        }
+
+        /// Encode `(current, min, max)` as 6-byte little-endian Int16 triple and notify
+        /// subscribed centrals. Each `nil` becomes the `-1` sentinel.
+        func publishTrainerResistance(current: Int?, min: Int?, max: Int?) {
+            func encode(_ value: Int?) -> Int16 {
+                guard let v = value else { return BLEProtocol.trainerResistanceNoneSentinel }
+                return Int16(clamping: v)
+            }
+            let cur = encode(current).littleEndian
+            let lo = encode(min).littleEndian
+            let hi = encode(max).littleEndian
+            var payload = Data()
+            withUnsafeBytes(of: cur) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: lo) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: hi) { payload.append(contentsOf: $0) }
+            lastPublishedResistance.withLock { $0 = payload }
+            guard let manager, let characteristic = trainerResistanceCharacteristic else { return }
+            let sent = manager.updateValue(payload, for: characteristic, onSubscribedCentrals: nil)
+            print("BLEHeartRateScanner: published trainer resistance current=\(cur) min=\(lo) max=\(hi), queued: \(sent)")
         }
 
         func sendCommand(_ command: BLECommand) {
@@ -167,9 +265,27 @@ final class BLEHeartRateScanner: HeartRateStreaming {
                 permissions: .writeable
             )
 
-            // Watch writes 2-byte LE Int16 trainer-adjust deltas here
-            let trainerAdjustCharacteristic = CBMutableCharacteristic(
-                type: BLEProtocol.trainerAdjustCharUUID,
+            // Bidirectional trainer target: Watch writes absolute target watts (2-byte LE Int16);
+            // host pushes current `currentTargetWatts` via notify (and answers reads).
+            let trainerTargetCharacteristic = CBMutableCharacteristic(
+                type: BLEProtocol.trainerTargetCharUUID,
+                properties: [.read, .write, .writeWithoutResponse, .notify],
+                value: nil,
+                permissions: [.readable, .writeable]
+            )
+
+            // Bidirectional trainer resistance: Watch writes absolute level; host notifies
+            // `currentResistanceLevel`. Mirrors the target channel.
+            let trainerResistanceCharacteristic = CBMutableCharacteristic(
+                type: BLEProtocol.trainerResistanceCharUUID,
+                properties: [.read, .write, .writeWithoutResponse, .notify],
+                value: nil,
+                permissions: [.readable, .writeable]
+            )
+
+            // Watch writes cumulative HR-based active-energy estimate (2-byte LE UInt16, kcal).
+            let watchEnergyCharacteristic = CBMutableCharacteristic(
+                type: BLEProtocol.watchEnergyCharUUID,
                 properties: [.write, .writeWithoutResponse],
                 value: nil,
                 permissions: .writeable
@@ -180,12 +296,16 @@ final class BLEHeartRateScanner: HeartRateStreaming {
                 hrCharacteristic,
                 cmdCharacteristic,
                 watchCmdCharacteristic,
-                trainerAdjustCharacteristic,
+                trainerTargetCharacteristic,
+                trainerResistanceCharacteristic,
+                watchEnergyCharacteristic,
             ]
             peripheral.add(service)
 
             Task { @MainActor in
                 self.commandCharacteristic = cmdCharacteristic
+                self.trainerTargetCharacteristic = trainerTargetCharacteristic
+                self.trainerResistanceCharacteristic = trainerResistanceCharacteristic
             }
         }
 
@@ -222,15 +342,35 @@ final class BLEHeartRateScanner: HeartRateStreaming {
                     }
                     print("BLEHeartRateScanner: received Watch command \(command)")
                     onWatchCommand(command)
-                } else if request.characteristic.uuid == BLEProtocol.trainerAdjustCharUUID {
+                } else if request.characteristic.uuid == BLEProtocol.trainerTargetCharUUID {
                     guard data.count >= 2 else {
-                        print("BLEHeartRateScanner: trainer-adjust payload too short")
+                        print("BLEHeartRateScanner: trainer-target payload too short")
                         continue
                     }
                     let unsigned = UInt16(data[0]) | (UInt16(data[1]) << 8)
-                    let delta = Int(Int16(bitPattern: unsigned))
-                    print("BLEHeartRateScanner: received trainer-adjust \(delta)W")
-                    onTrainerAdjust(delta)
+                    let target = Int(Int16(bitPattern: unsigned))
+                    print("BLEHeartRateScanner: received trainer-target write \(target)W")
+                    // The Watch should never write the "no target" sentinel — it only sends
+                    // concrete absolute targets. Defensively drop negatives.
+                    guard target >= 0 else { continue }
+                    onTrainerTargetWrite(target)
+                } else if request.characteristic.uuid == BLEProtocol.trainerResistanceCharUUID {
+                    guard data.count >= 2 else {
+                        print("BLEHeartRateScanner: trainer-resistance payload too short")
+                        continue
+                    }
+                    let unsigned = UInt16(data[0]) | (UInt16(data[1]) << 8)
+                    let level = Int(Int16(bitPattern: unsigned))
+                    print("BLEHeartRateScanner: received trainer-resistance write \(level)")
+                    guard level >= 0 else { continue }
+                    onTrainerResistanceWrite(level)
+                } else if request.characteristic.uuid == BLEProtocol.watchEnergyCharUUID {
+                    guard data.count >= 2 else {
+                        print("BLEHeartRateScanner: watch-energy payload too short")
+                        continue
+                    }
+                    let kcal = Int(UInt16(data[0]) | (UInt16(data[1]) << 8))
+                    onWatchEnergy(kcal)
                 }
             }
             if let first = requests.first {
@@ -246,6 +386,21 @@ final class BLEHeartRateScanner: HeartRateStreaming {
                     self.sendCommand(.startWorkout)
                 }
             }
+            // Re-push the last-known trainer target so a freshly subscribed Watch knows
+            // the current value without having to issue a read.
+            if characteristic.uuid == BLEProtocol.trainerTargetCharUUID {
+                let last = lastPublishedTarget.withLock { $0 }
+                let payload = withUnsafeBytes(of: last.littleEndian) { Data($0) }
+                if let manager, let char = trainerTargetCharacteristic {
+                    _ = manager.updateValue(payload, for: char, onSubscribedCentrals: [central])
+                }
+            }
+            if characteristic.uuid == BLEProtocol.trainerResistanceCharUUID {
+                let payload = lastPublishedResistance.withLock { $0 }
+                if let manager, let char = trainerResistanceCharacteristic {
+                    _ = manager.updateValue(payload, for: char, onSubscribedCentrals: [central])
+                }
+            }
         }
 
         nonisolated func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral, didUnsubscribeFrom characteristic: CBCharacteristic) {
@@ -253,17 +408,38 @@ final class BLEHeartRateScanner: HeartRateStreaming {
         }
 
         nonisolated func peripheralManager(_ peripheral: CBPeripheralManager, didReceiveRead request: CBATTRequest) {
-            guard request.characteristic.uuid == BLEProtocol.commandCharUUID else {
-                peripheral.respond(to: request, withResult: .requestNotSupported)
+            if request.characteristic.uuid == BLEProtocol.commandCharUUID {
+                let data = getWorkoutData() ?? Data()
+                if request.offset > data.count {
+                    peripheral.respond(to: request, withResult: .invalidOffset)
+                } else {
+                    request.value = data.subdata(in: request.offset..<data.count)
+                    peripheral.respond(to: request, withResult: .success)
+                }
                 return
             }
-            let data = getWorkoutData() ?? Data()
-            if request.offset > data.count {
-                peripheral.respond(to: request, withResult: .invalidOffset)
-            } else {
-                request.value = data.subdata(in: request.offset..<data.count)
-                peripheral.respond(to: request, withResult: .success)
+            if request.characteristic.uuid == BLEProtocol.trainerTargetCharUUID {
+                let last = lastPublishedTarget.withLock { $0 }
+                let payload = withUnsafeBytes(of: last.littleEndian) { Data($0) }
+                if request.offset > payload.count {
+                    peripheral.respond(to: request, withResult: .invalidOffset)
+                } else {
+                    request.value = payload.subdata(in: request.offset..<payload.count)
+                    peripheral.respond(to: request, withResult: .success)
+                }
+                return
             }
+            if request.characteristic.uuid == BLEProtocol.trainerResistanceCharUUID {
+                let payload = lastPublishedResistance.withLock { $0 }
+                if request.offset > payload.count {
+                    peripheral.respond(to: request, withResult: .invalidOffset)
+                } else {
+                    request.value = payload.subdata(in: request.offset..<payload.count)
+                    peripheral.respond(to: request, withResult: .success)
+                }
+                return
+            }
+            peripheral.respond(to: request, withResult: .requestNotSupported)
         }
     }
 }
@@ -286,8 +462,8 @@ extension BLEHeartRateScanner {
         watchEndedWorkout = true
     }
 
-    func debugSimulateTrainerAdjustFromWatch(_ delta: Int) {
-        watchTrainerAdjustDelta = delta
+    func debugSimulateTrainerTargetFromWatch(_ target: Int) {
+        watchTrainerTargetWrite = target
     }
 }
 #endif

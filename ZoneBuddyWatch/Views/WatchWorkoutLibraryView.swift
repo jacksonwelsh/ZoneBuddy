@@ -65,7 +65,12 @@ struct WatchWorkoutLibraryView: View {
             }
         }
         .onAppear {
-            if !WatchNavigationManager.shared.shouldStartWorkout {
+            // If a remote-start signal landed before the view was wired up to observe it
+            // (e.g. during a fresh launch into an in-progress iPad workout), `.onChange`
+            // will never fire — pick it up here instead.
+            if WatchNavigationManager.shared.shouldStartWorkout && navigationPath.isEmpty {
+                navigationPath.append(WatchPlayerDestination.remote)
+            } else {
                 WatchConnectivityManager.shared.startPolling()
             }
         }

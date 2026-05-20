@@ -132,8 +132,10 @@ struct FTPTestPlayerTests {
 
         vm.start()
         await wait()
-        // Warmup interval should not push a target.
-        #expect(bike.fakeTrainer.mode == .off)
+        // Warmup parks the trainer in Level mode at 0 (no power target).
+        #expect(bike.fakeTrainer.mode == .manualResistance)
+        #expect(bike.fakeTrainer.currentResistanceLevel == 0)
+        #expect(bike.fakeTrainer.currentTargetWatts == nil)
 
         // Advance into the ramp step.
         currentTime.addTimeInterval(1)
@@ -160,7 +162,7 @@ struct FTPTestPlayerTests {
     }
 
     @Test
-    func rampTestAutoEndsOnSustainedLowCadence() async {
+    func rampTestSkipsToCooldownOnSustainedLowCadence() async {
         var currentTime = Date(timeIntervalSince1970: 1000)
         let timer = MockTimerProvider()
         let bike = FTPTestStubBikeManager()
@@ -171,11 +173,11 @@ struct FTPTestPlayerTests {
             timestamp: currentTime
         )
 
-        // 1-sec warmup, 30-sec ramp step at 150W, end.
+        // 1-sec warmup, 30-sec ramp step at 150W, 300-sec cooldown.
         let intervals = [
             Interval(zone: nil, duration: 1, sortOrder: 0),
             Interval(zone: nil, duration: 30, sortOrder: 1, targetWatts: 150),
-            Interval(zone: nil, duration: 1, sortOrder: 2),
+            Interval(zone: nil, duration: 300, sortOrder: 2),
         ]
         let vm = WorkoutPlayerViewModel(
             intervals: intervals,
@@ -193,7 +195,7 @@ struct FTPTestPlayerTests {
         timer.fire(at: currentTime)
         await wait()
         #expect(bike.fakeTrainer.mode == .erg)
-        #expect(vm.isFinished == false)
+        #expect(vm.currentIntervalIndex == 1)
 
         // Drop cadence well below the failure threshold and tick through the
         // grace window + the three confirmation ticks.
@@ -208,11 +210,17 @@ struct FTPTestPlayerTests {
             currentTime.addTimeInterval(1)
             timer.fire(at: currentTime)
             await wait()
-            if vm.isFinished { break }
+            if vm.currentIntervalIndex == 2 { break }
         }
 
-        #expect(vm.isFinished == true)
-        #expect(vm.isRunning == false)
+        // Failure should land the rider in the cooldown interval, not end the
+        // workout, and the trainer should be released from ERG so the rider
+        // can spin easy.
+        #expect(vm.currentIntervalIndex == 2)
+        #expect(vm.isFinished == false)
+        #expect(vm.isRunning == true)
+        #expect(bike.fakeTrainer.mode == .off)
+        #expect(vm.secondsRemaining > 0)
     }
 
     @Test
@@ -288,6 +296,164 @@ struct FTPTestPlayerTests {
         #expect(vm.isFinished == false)
     }
 
+    // MARK: - History persistence
+
+    @Test
+    func twentyMinFTPTestPersistsModalityWithResult() async {
+        var currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        let bike = FTPTestStubBikeManager()
+        let persister = CountingSessionPersister()
+        let healthKit = MockHealthKitWorkoutRecorder()
+
+        // 1-sec warmup, 2-sec test interval, 1-sec end. Index 1 == testIntervalIndex
+        // for the 20-min protocol, so the test interval drives FTP sampling.
+        let intervals = [
+            Interval(zone: nil, duration: 1, sortOrder: 0),
+            Interval(zone: nil, duration: 2, sortOrder: 1),
+            Interval(zone: nil, duration: 1, sortOrder: 2),
+        ]
+        let vm = WorkoutPlayerViewModel(
+            intervals: intervals,
+            timerProvider: timer,
+            workoutName: "FTP Test",
+            dateProvider: { currentTime },
+            bikeManager: bike,
+            healthKitManager: healthKit,
+            ftpTestKind: .twentyMinute,
+            sessionPersister: persister
+        )
+
+        vm.start()
+        await wait()
+
+        // Tick to t=1 — workout transitions into the test interval, so
+        // ftpTestStartedAt is captured.
+        currentTime.addTimeInterval(1)
+        timer.fire(at: currentTime)
+        await wait()
+
+        // Queue power samples timestamped inside the test window so the
+        // end-of-workout drain pulls them into allBikeSamples before
+        // finalizeFTPTestResult runs.
+        bike.pendingSamples = [
+            BikeDataSample(timestamp: currentTime.addingTimeInterval(0.5), power: 200, cadence: nil, heartRate: nil, speed: nil, distance: nil, calories: nil),
+            BikeDataSample(timestamp: currentTime.addingTimeInterval(1.5), power: 200, cadence: nil, heartRate: nil, speed: nil, distance: nil, calories: nil),
+        ]
+
+        // Tick past the end to finish the workout naturally.
+        currentTime.addTimeInterval(4)
+        timer.fire(at: currentTime)
+        await wait()
+
+        guard let saved = persister.lastSession else {
+            Issue.record("Expected a persisted session")
+            return
+        }
+        guard case .ftpTest(let proto, let result) = saved.modality else {
+            Issue.record("Expected .ftpTest modality, got \(saved.modality)")
+            return
+        }
+        #expect(proto == .twentyMinute)
+        // 20-min FTP = round(0.95 × avg). With two 200W samples, avg = 200,
+        // FTP = round(190.0) = 190.
+        #expect(result?.measuredFTP == 190)
+        #expect(result?.sourcePower == 200)
+    }
+
+    @Test
+    func ftpTestPersistsModalityEvenWithoutResult() async {
+        var currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        let bike = FTPTestStubBikeManager()
+        let persister = CountingSessionPersister()
+        let healthKit = MockHealthKitWorkoutRecorder()
+
+        let intervals = [
+            Interval(zone: nil, duration: 1, sortOrder: 0),
+            Interval(zone: nil, duration: 1, sortOrder: 1),
+        ]
+        let vm = WorkoutPlayerViewModel(
+            intervals: intervals,
+            timerProvider: timer,
+            workoutName: "FTP Ramp Test",
+            dateProvider: { currentTime },
+            bikeManager: bike,
+            healthKitManager: healthKit,
+            ftpTestKind: .ramp,
+            sessionPersister: persister
+        )
+
+        vm.start()
+        await wait()
+        // No bike samples — test ends with no power data, so no result.
+        currentTime.addTimeInterval(3)
+        timer.fire(at: currentTime)
+        await wait()
+
+        guard let saved = persister.lastSession else {
+            Issue.record("Expected a persisted session")
+            return
+        }
+        guard case .ftpTest(let proto, let result) = saved.modality else {
+            Issue.record("Expected .ftpTest modality, got \(saved.modality)")
+            return
+        }
+        #expect(proto == .ramp)
+        #expect(result == nil)
+    }
+
+    // MARK: - SessionModality round-trip
+
+    @Test
+    func sessionModalityRoundTripsThroughCodable() throws {
+        let cases: [SessionModality] = [
+            .structured,
+            .freeRide,
+            .ftpTest(protocol: .twentyMinute, result: FTPTestResult(measuredFTP: 245, sourcePower: 258)),
+            .ftpTest(protocol: .ramp, result: FTPTestResult(measuredFTP: 255, sourcePower: 340)),
+            .ftpTest(protocol: .ramp, result: nil),
+        ]
+        let encoder = JSONEncoder()
+        let decoder = JSONDecoder()
+        for value in cases {
+            let data = try encoder.encode(value)
+            let decoded = try decoder.decode(SessionModality.self, from: data)
+            #expect(decoded == value)
+        }
+    }
+
+    @Test
+    func sessionWithoutModalityJSONFallsBackToStructured() {
+        let session = WorkoutSession(name: "Workout", totalDuration: 600)
+        #expect(session.modality == .structured)
+    }
+
+    @Test
+    func sessionConstructedAsFreeRideHasFreeRideModality() {
+        let session = WorkoutSession(name: "Free Ride", totalDuration: 600, modality: .freeRide)
+        #expect(session.modality == .freeRide)
+    }
+
+    @Test
+    func sessionConstructedAsFTPTestHasFTPTestModality() {
+        let session = WorkoutSession(
+            name: "FTP Test",
+            totalDuration: 1200,
+            modality: .ftpTest(
+                protocol: .twentyMinute,
+                result: FTPTestResult(measuredFTP: 245, sourcePower: 258)
+            )
+        )
+        guard case .ftpTest(let proto, let result) = session.modality else {
+            Issue.record("Expected .ftpTest modality")
+            return
+        }
+        #expect(proto == .twentyMinute)
+        #expect(result?.measuredFTP == 245)
+        #expect(result?.sourcePower == 258)
+    }
+
     @Test
     func rampStepTargetWattsNilForTwentyMinTest() {
         let intervals = [Interval(zone: nil, duration: 60, sortOrder: 0, targetWatts: 220)]
@@ -328,6 +494,10 @@ private final class FTPTestStubBikeManager: BikeConnecting {
     var hasReceivedNonZeroMetric: Bool = true
     var isReconnecting: Bool = false
 
+    /// Samples returned (and cleared) by the next `drainSamples()` call. Tests
+    /// queue power samples here to drive the FTP calculation end-to-end.
+    var pendingSamples: [BikeDataSample] = []
+
     let fakeTrainer = FakeTrainerController()
     var trainerController: (any TrainerControlling)? { fakeTrainer }
 
@@ -335,7 +505,11 @@ private final class FTPTestStubBikeManager: BikeConnecting {
     func stopScanning() {}
     func connect(to device: FTMSDiscoveredDevice) {}
     func disconnect() {}
-    func drainSamples() -> [BikeDataSample] { [] }
+    func drainSamples() -> [BikeDataSample] {
+        let drained = pendingSamples
+        pendingSamples = []
+        return drained
+    }
     func autoConnect(timeout: TimeInterval) {}
     func attemptReconnect() {}
 }

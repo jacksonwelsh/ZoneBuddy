@@ -4,16 +4,65 @@ struct WatchWorkoutPlayerView: View {
     @State private var viewModel: WorkoutPlayerViewModel
     @State private var showExitConfirm = false
     @State private var isHandlingRemoteAction = false
+    /// Which trainer control the Crown is currently driving. Derived live from the
+    /// iPad's published state — when the iPad switches mode, the Watch follows.
+    private enum AdjustMode {
+        case targetWatts
+        case resistanceLevel
+    }
+
     @State private var crownAccumulator: Double = 0
+    /// Absolute value the rider is dialing in (watts or level depending on mode).
+    /// `nil` between rotation sessions — first Crown tick seeds it from the iPad's
+    /// published value for the active mode.
+    @State private var pendingValue: Int?
+    /// Snapshot of the iPad's published value taken on the first tick of a session.
+    @State private var baselineValue: Int?
+    /// Units moved in the current direction since the last reversal. Once it crosses
+    /// the mode's acceleration threshold, the per-detent step jumps up. Resets on
+    /// direction reversal so corrections stay fine.
+    @State private var sameDirectionAccumulated: Int = 0
+    /// Sign of the most recent detent (+1 / -1 / 0). Used for the overlay arrow
+    /// and for detecting direction reversals (which reset acceleration).
+    @State private var lastAdjustDirection: Int = 0
+    @State private var showAdjustOverlay: Bool = false
+    /// Single task that debounces the BLE write + overlay fade. Re-armed on every
+    /// detent so continued rotation keeps the commit pending; the user can correct
+    /// the target by spinning the other way before this fires.
+    @State private var commitTask: Task<Void, Never>? = nil
     @FocusState private var crownFocused: Bool
     @Environment(\.dismiss) private var dismiss
 
     private let isRemote: Bool
     private let startedAt: Date?
 
-    /// Crown detents per emitted ±N-watt adjustment. Tuned so a deliberate
-    /// rotation produces clear single steps without flooding BLE writes.
-    private static let wattsPerDetent: Int = 5
+    /// ERG: 1W base step, 5W after 25W in one direction.
+    /// Level: 1 base step, no acceleration (resistance ranges are tiny).
+    private static let baseStepWatts: Int = 1
+    private static let acceleratedStepWatts: Int = 5
+    private static let accelerationThresholdWatts: Int = 25
+    private static let resistanceStep: Int = 1
+
+    /// Inactivity period after the last detent before the pending value is sent to
+    /// the iPad. Long enough for the rider to keep rotating or reverse to correct.
+    private static let commitDelay: Duration = .seconds(1)
+    /// How long the overlay lingers after a commit so the rider sees the final value
+    /// confirmed before it fades.
+    private static let overlayHoldAfterCommit: Duration = .milliseconds(400)
+
+    /// Trainer mode the iPad is currently in, derived from which value it most recently
+    /// published as non-sentinel. The Watch follows iPad mode live — when the iPad
+    /// switches Level↔ERG, the Crown's control scheme switches with it.
+    private var activeMode: AdjustMode {
+        WatchHRBroadcaster.shared.currentTrainerResistance != nil
+            ? .resistanceLevel
+            : .targetWatts
+    }
+
+    /// `.low` for Level (small range, want fine control), `.medium` for ERG.
+    private var crownSensitivity: DigitalCrownRotationalSensitivity {
+        activeMode == .resistanceLevel ? .low : .medium
+    }
 
     private var isFreeRide: Bool { viewModel.mode.isFreeRide }
 
@@ -125,12 +174,29 @@ struct WatchWorkoutPlayerView: View {
                 .tabViewStyle(.page)
             }
         }
+        .overlay {
+            if showAdjustOverlay, let value = pendingValue {
+                let mode = activeMode
+                WatchTrainerAdjustOverlay(
+                    value: value,
+                    valueSuffix: mode == .targetWatts ? "W" : "",
+                    caption: mode == .targetWatts ? "TARGET WATTS" : "RESISTANCE LEVEL",
+                    direction: lastAdjustDirection,
+                    zoneColor: displayZoneColor
+                )
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: showAdjustOverlay)
+        .animation(.default, value: pendingValue)
         .onAppear {
             let elapsed = startedAt.map { max(0, Int(Date().timeIntervalSince($0))) } ?? 0
             viewModel.start(atElapsedSeconds: elapsed)
             crownFocused = true
         }
         .onDisappear {
+            commitTask?.cancel()
+            commitTask = nil
             viewModel.stopBackgroundKeepAlive()
             // Only signal the phone/iPad when the user ended this workout —
             // a natural completion will be reached on their own clock too,
@@ -155,6 +221,15 @@ struct WatchWorkoutPlayerView: View {
         .onChange(of: viewModel.currentIntervalIndex) { oldIndex, newIndex in
             guard newIndex != oldIndex else { return }
             WKInterfaceDevice.current().play(.notification)
+        }
+        .onChange(of: activeMode) { _, _ in
+            // The iPad switched ERG↔Level. Abandon any in-flight adjustment — the
+            // rider's intent was for the previous mode and doesn't carry over.
+            // The next Crown tick will start a fresh session under the new mode,
+            // re-seeded from the iPad's current value.
+            commitTask?.cancel()
+            commitTask = nil
+            resetSessionState()
         }
         .onReceive(NotificationCenter.default.publisher(for: .watchReceivedDismiss)) { _ in
             viewModel.pause()
@@ -187,18 +262,121 @@ struct WatchWorkoutPlayerView: View {
                 from: -10_000,
                 through: 10_000,
                 by: 1,
-                sensitivity: .low,
+                sensitivity: crownSensitivity,
                 isContinuous: true
             )
             .onChange(of: crownAccumulator) { _, newValue in
-                let step = Double(Self.wattsPerDetent)
-                guard abs(newValue) >= step else { return }
-                let detents = (newValue / step).rounded(.towardZero)
-                let deltaWatts = Int16(detents) * Int16(Self.wattsPerDetent)
-                WatchHRBroadcaster.shared.sendTrainerAdjust(deltaWatts: deltaWatts)
-                WKInterfaceDevice.current().play(.click)
-                crownAccumulator -= Double(detents) * step
+                handleCrownChange(newValue)
             }
+    }
+
+    private func handleCrownChange(_ newValue: Double) {
+        let mode = activeMode
+        let step = currentStep(for: mode)
+        let stepD = Double(step)
+        guard abs(newValue) >= stepD else { return }
+
+        let detents = (newValue / stepD).rounded(.towardZero)
+        let deltaUnits = Int(detents) * step
+        crownAccumulator -= Double(detents) * stepD
+        guard deltaUnits != 0 else { return }
+
+        let direction = deltaUnits > 0 ? 1 : -1
+        if direction != lastAdjustDirection {
+            sameDirectionAccumulated = 0
+        }
+        sameDirectionAccumulated += abs(deltaUnits)
+        lastAdjustDirection = direction
+
+        if baselineValue == nil {
+            baselineValue = sessionBaseline(for: mode)
+        }
+        let baseline = baselineValue ?? 0
+        let current = pendingValue ?? baseline
+        let unclamped = current + deltaUnits
+        let clamped = clampToBounds(unclamped, mode: mode)
+        pendingValue = clamped
+
+        // If the bound is in the way, drain the residual accumulator so the rider
+        // can immediately come back by spinning the other way — otherwise they'd
+        // have to "unwind" the wasted rotation before any change is visible.
+        if clamped != unclamped {
+            crownAccumulator = 0
+        }
+
+        WKInterfaceDevice.current().play(.click)
+        showAdjustOverlay = true
+        scheduleCommit()
+    }
+
+    private func clampToBounds(_ value: Int, mode: AdjustMode) -> Int {
+        switch mode {
+        case .targetWatts:
+            // No bounds published for ERG — the iPad clamps to the bike's power range
+            // server-side. We still hard-floor at 0 since negative watts are meaningless.
+            return max(0, value)
+        case .resistanceLevel:
+            let lo = WatchHRBroadcaster.shared.trainerResistanceMin ?? 0
+            let hi = WatchHRBroadcaster.shared.trainerResistanceMax ?? Int.max
+            return Swift.min(Swift.max(value, lo), hi)
+        }
+    }
+
+    private func currentStep(for mode: AdjustMode) -> Int {
+        switch mode {
+        case .targetWatts:
+            return sameDirectionAccumulated >= Self.accelerationThresholdWatts
+                ? Self.acceleratedStepWatts
+                : Self.baseStepWatts
+        case .resistanceLevel:
+            // Resistance ranges are small (typically 0–30), so per-detent step stays
+            // at 1 and the rider gets the fine control they'd get from the iPad's
+            // own ± button.
+            return Self.resistanceStep
+        }
+    }
+
+    private func sessionBaseline(for mode: AdjustMode) -> Int {
+        switch mode {
+        case .targetWatts:
+            return WatchHRBroadcaster.shared.currentTrainerTarget ?? 0
+        case .resistanceLevel:
+            return WatchHRBroadcaster.shared.currentTrainerResistance ?? 0
+        }
+    }
+
+    /// Debounced commit: after `commitDelay` of no Crown movement, send the final
+    /// pending value to the iPad on the channel matching the current iPad mode,
+    /// hold the overlay briefly so the rider sees the confirmed value, then fade.
+    private func scheduleCommit() {
+        commitTask?.cancel()
+        commitTask = Task { @MainActor in
+            try? await Task.sleep(for: Self.commitDelay)
+            if Task.isCancelled { return }
+            if let value = pendingValue {
+                switch activeMode {
+                case .targetWatts:
+                    WatchHRBroadcaster.shared.sendTrainerTarget(value)
+                case .resistanceLevel:
+                    WatchHRBroadcaster.shared.sendTrainerResistance(value)
+                }
+            }
+            try? await Task.sleep(for: Self.overlayHoldAfterCommit)
+            if Task.isCancelled { return }
+            resetSessionState()
+        }
+    }
+
+    /// Drop in-flight rotation session — used by both the post-commit cleanup and the
+    /// iPad-mode-change handler. The latter abandons any pending value because the
+    /// rider's intent was for the OLD mode, and that intent doesn't translate.
+    private func resetSessionState() {
+        showAdjustOverlay = false
+        pendingValue = nil
+        baselineValue = nil
+        sameDirectionAccumulated = 0
+        lastAdjustDirection = 0
+        crownAccumulator = 0
     }
 
     private var activeZoneContent: some View {

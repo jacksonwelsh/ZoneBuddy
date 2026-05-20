@@ -15,10 +15,45 @@ nonisolated enum BLEProtocol {
     static let commandCharUUID = CBUUID(string: "B5E5D4A3-4F2C-4C33-9E01-1A2B3C4D5E6F")
     /// Watch → iPad: Watch writes pause/resume/end commands originating from the watch UI.
     static let watchCommandCharUUID = CBUUID(string: "B5E5D4A4-4F2C-4C33-9E01-1A2B3C4D5E6F")
-    /// Watch → host: 2-byte little-endian Int16 delta watts. Host applies via
-    /// `TrainerController.adjustTargetWatts(by:)`. Used for Digital Crown
-    /// adjustments while a workout is running.
-    static let trainerAdjustCharUUID = CBUUID(string: "B5E5D4A5-4F2C-4C33-9E01-1A2B3C4D5E6F")
+    /// Bidirectional absolute trainer-target channel.
+    /// Payload: 2-byte little-endian Int16.
+    ///   `>= 0` — absolute target watts (host is in or will enter ERG mode at this value).
+    ///   `-1`   — sentinel meaning "no target" (host is not in ERG mode).
+    /// Direction:
+    ///   Watch → host writes: requested absolute target (host applies via `setTargetWatts`).
+    ///   Host  → Watch notify/read: current `TrainerController.currentTargetWatts`.
+    /// The Watch reads on connect and subscribes for notifies so it always knows the
+    /// true current value and can compute an accurate new target as the Crown turns.
+    static let trainerTargetCharUUID = CBUUID(string: "B5E5D4A5-4F2C-4C33-9E01-1A2B3C4D5E6F")
+    /// Watch → iPad: cumulative HR-based active-energy estimate, in kilocalories.
+    /// Payload: 2-byte little-endian UInt16. Watch writes whenever its
+    /// `HKLiveWorkoutBuilder` posts an updated `.activeEnergyBurned` statistic.
+    /// The iPad uses the latest received value at workout end to top up the
+    /// HealthKit "Total Calories" via a `.basalEnergyBurned` delta sample when
+    /// the Watch's estimate exceeds the power-based active calculation.
+    static let watchEnergyCharUUID = CBUUID(string: "B5E5D4A6-4F2C-4C33-9E01-1A2B3C4D5E6F")
+
+    /// Sentinel for "no current target" on the trainer-target characteristic.
+    static let trainerTargetNoneSentinel: Int16 = -1
+
+    /// Bidirectional absolute trainer-resistance channel. Mirrors `trainerTargetCharUUID`
+    /// for manual-resistance (Level) mode.
+    ///
+    /// Host → Watch notify/read payload: 6 bytes, three little-endian Int16s:
+    ///   bytes 0–1: current resistance level (`-1` = "not in Level mode").
+    ///   bytes 2–3: minimum supported level (`-1` = "unknown").
+    ///   bytes 4–5: maximum supported level (`-1` = "unknown").
+    /// Bounds are persistent capabilities of the bike, so the host publishes them whenever
+    /// they're known — even while in ERG — so the Watch can clamp Crown input the moment
+    /// the rider switches to Level.
+    ///
+    /// Watch → host write payload: 2 bytes, little-endian Int16, absolute level (`>= 0`).
+    /// The Watch only writes here when the host has already published a non-nil current
+    /// level, so this never switches the host's active mode.
+    static let trainerResistanceCharUUID = CBUUID(string: "B5E5D4A7-4F2C-4C33-9E01-1A2B3C4D5E6F")
+
+    /// Sentinel for "not in Level mode" / "bound unknown" on the trainer-resistance characteristic.
+    static let trainerResistanceNoneSentinel: Int16 = -1
 
     static let advertisedLocalName = "ZoneBuddy"
 }
