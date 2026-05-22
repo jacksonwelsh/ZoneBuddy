@@ -16,11 +16,16 @@ struct TimerTile: View {
                 .foregroundStyle(foregroundColor)
                 .contentTransition(.numericText())
 
-            HStack(spacing: 16) {
-                Label(elapsed.formattedDuration, systemImage: "stopwatch")
-                    .font(.caption)
-                    .monospacedDigit()
-                    .foregroundStyle(foregroundColor.opacity(0.6))
+            // No interval (Route Ride, unstructured Free Ride) → the big
+            // number is already the elapsed time; the stopwatch row would
+            // just duplicate it / show 00:00. Suppress it in that case.
+            if intervalDuration > 0 {
+                HStack(spacing: 16) {
+                    Label(elapsed.formattedDuration, systemImage: "stopwatch")
+                        .font(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(foregroundColor.opacity(0.6))
+                }
             }
         }
     }

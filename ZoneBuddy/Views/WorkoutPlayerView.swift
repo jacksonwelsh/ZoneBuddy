@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import WatchConnectivity
 
 /// True when running inside Xcode's SwiftUI preview host (PreviewShell).
@@ -58,6 +59,23 @@ struct WorkoutPlayerView: View {
             ?? (WCSession.isSupported() ? WatchHeartRateRelay() : BLEHeartRateScanner.shared)
         let hasBike = resolvedBike.isConnected
         let healthKit: HealthKitWorkoutRecording? = (hasBike || hrStreamer != nil) ? HealthKitWorkoutProvider.make() : nil
+
+        // Route Ride: resolve the saved `Route` and build a progression
+        // controller that the VM will tick on each timer beat.
+        let routeController: RouteProgressionController? = {
+            guard case .routeRide(let routeID) = mode else { return nil }
+            let descriptor = FetchDescriptor<Route>(predicate: #Predicate { $0.id == routeID })
+            guard let route = try? DataStore.shared.context.fetch(descriptor).first else {
+                return nil
+            }
+            return RouteProgressionController(
+                route: route,
+                trainerController: resolvedBike.trainerController,
+                bikeManager: resolvedBike,
+                settings: SettingsManager.shared
+            )
+        }()
+
         _viewModel = State(initialValue: WorkoutPlayerViewModel(
             intervals: intervals,
             timerProvider: LiveTimerProvider(),
@@ -76,7 +94,8 @@ struct WorkoutPlayerView: View {
             heartRateStreamer: hrStreamer,
             ftpTestKind: ftpTestKind,
             sessionPersister: LiveWorkoutSessionPersister(context: DataStore.shared.context),
-            mode: mode
+            mode: mode,
+            routeController: routeController
         ))
     }
 
@@ -132,12 +151,16 @@ struct WorkoutPlayerView: View {
                 let transferIntervals = intervals.map {
                     IntervalTransferData(zone: $0.zoneRawValue, duration: $0.duration)
                 }
+                // Route Ride has no Watch UI in v1 — bridge as a freeride
+                // so the Watch shows a basic timer + metrics instead of
+                // crashing on an unknown mode string.
+                let watchMode: String? = (mode.isFreeRide || mode.isRouteRide) ? "freeride" : nil
                 let transferData = WorkoutTransferData(
                     name: workoutName,
                     transitionWarningDuration: transitionWarningDuration,
                     intervals: transferIntervals,
                     startedAt: Date(),
-                    mode: mode.isFreeRide ? "freeride" : nil,
+                    mode: watchMode,
                     goalDurationSec: mode.goalTimeSeconds,
                     goalDistanceMeters: mode.goalDistanceMeters
                 )

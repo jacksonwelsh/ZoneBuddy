@@ -5,6 +5,15 @@ struct SettingsView: View {
     var bikeManager: any BikeConnecting = BikeManagerProvider.current
     @State private var ftpText: String = ""
     @State private var maxHRText: String = ""
+    @State private var weightText: String = ""
+    @State private var weightSyncStatus: WeightSyncStatus = .idle
+
+    private enum WeightSyncStatus: Equatable {
+        case idle
+        case syncing
+        case synced(kg: Double)
+        case failed(String)
+    }
 
     var body: some View {
         NavigationStack {
@@ -71,6 +80,40 @@ struct SettingsView: View {
                     Text("Take an FTP test to measure your threshold power, or enter it manually above. Max HR is used for heart rate zone ranges (100–230 bpm).")
                 }
 
+                Section {
+                    HStack {
+                        Label("Weight", systemImage: "scalemass.fill")
+                        Spacer()
+                        TextField("75", text: $weightText)
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 80)
+                            .onChange(of: weightText) { _, newValue in
+                                if let value = Double(newValue), (30...250).contains(value) {
+                                    settings.riderWeightKg = value
+                                }
+                            }
+                        Text("kg")
+                            .foregroundStyle(.secondary)
+                    }
+                    Button {
+                        Task { await syncWeightFromHealth() }
+                    } label: {
+                        HStack {
+                            Label(syncButtonLabel, systemImage: syncButtonIcon)
+                            if weightSyncStatus == .syncing {
+                                Spacer()
+                                ProgressView().controlSize(.small)
+                            }
+                        }
+                    }
+                    .disabled(weightSyncStatus == .syncing)
+                } header: {
+                    Text("Rider")
+                } footer: {
+                    Text("Used by Route Ride to compute virtual speed from your power and the road grade. Heavier riders climb slower and descend faster.")
+                }
+
                 Section("Defaults") {
                     HStack {
                         Label("Warning Interval", systemImage: "timer")
@@ -114,8 +157,41 @@ struct SettingsView: View {
             .onAppear {
                 ftpText = "\(settings.functionalThresholdPower)"
                 maxHRText = "\(settings.maxHeartRate)"
+                weightText = formattedWeight(settings.riderWeightKg)
             }
         }
+    }
+
+    private var syncButtonLabel: String {
+        switch weightSyncStatus {
+        case .idle:            return "Sync from Apple Health"
+        case .syncing:         return "Syncing…"
+        case .synced(let kg):  return "Synced (\(formattedWeight(kg)) kg)"
+        case .failed(let msg): return "Sync failed: \(msg)"
+        }
+    }
+
+    private var syncButtonIcon: String {
+        switch weightSyncStatus {
+        case .synced:  return "checkmark.circle.fill"
+        case .failed:  return "exclamationmark.triangle.fill"
+        default:       return "heart.text.square.fill"
+        }
+    }
+
+    private func syncWeightFromHealth() async {
+        weightSyncStatus = .syncing
+        if let kg = await BodyMassSync.latestBodyMassKg() {
+            settings.riderWeightKg = kg
+            weightText = formattedWeight(kg)
+            weightSyncStatus = .synced(kg: kg)
+        } else {
+            weightSyncStatus = .failed("no body-mass sample in Health")
+        }
+    }
+
+    private func formattedWeight(_ kg: Double) -> String {
+        String(format: "%.1f", kg)
     }
 }
 

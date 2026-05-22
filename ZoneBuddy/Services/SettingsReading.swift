@@ -8,6 +8,14 @@ protocol SettingsReading: AnyObject {
     var audioCuesEnabled: Bool { get }
     var functionalThresholdPower: Int { get }
     var maxHeartRate: Int { get }
+    /// Rider mass in kilograms. Used by Route Ride mode's virtual-speed
+    /// computation: gravity + rolling-resistance contributions are all
+    /// proportional to this. Defaults to a typical adult value if unset.
+    var riderWeightKg: Double { get }
+}
+
+extension SettingsReading {
+    var riderWeightKg: Double { 75.0 }
 }
 
 extension SettingsManager: SettingsReading {}

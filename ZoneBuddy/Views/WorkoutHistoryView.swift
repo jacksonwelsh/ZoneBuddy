@@ -88,8 +88,15 @@ private struct WorkoutHistoryRow: View {
             }
 
             switch session.modality {
-            case .structured, .freeRide:
+            case .structured:
+                // Structured workouts: show on-target adherence — how well the
+                // rider held the prescribed zone, not just where they were.
                 ZoneBreakdownBar(secondsByZone: session.onTargetSecondsByZone)
+            case .freeRide, .routeRide:
+                // Unstructured rides have no prescribed zone, so "on-target"
+                // is always empty. Show actual time spent in each zone
+                // (sourced from `zoneTimeAccumulator` at persist time).
+                ZoneBreakdownBar(secondsByZone: session.scheduledSecondsByZone)
             case .ftpTest:
                 EmptyView()
             }
@@ -102,7 +109,7 @@ private struct WorkoutHistoryRow: View {
         switch session.modality {
         case .ftpTest(_, let result):
             ftpTrailingMetric(result: result)
-        case .structured, .freeRide:
+        case .structured, .freeRide, .routeRide:
             workoutTrailingMetrics
         }
     }

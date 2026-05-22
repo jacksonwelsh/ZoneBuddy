@@ -174,6 +174,163 @@ struct TrainerControllerTests {
         #expect(controller.currentTargetWatts == nil)
     }
 
+    // MARK: - Simulation mode
+
+    /// Drive a `LiveTrainerController` against a controllable clock so the
+    /// 1Hz throttle is deterministic.
+    private final class Clock: @unchecked Sendable {
+        var now: Date = Date(timeIntervalSince1970: 1_000_000)
+        func advance(by seconds: TimeInterval) { now.addTimeInterval(seconds) }
+    }
+
+    @MainActor
+    private func makeSimController(_ clock: Clock) -> (MockFTMSBike, LiveTrainerController) {
+        let bike = MockFTMSBike(capabilities: defaultCapabilities())
+        let controller = LiveTrainerController(bike: bike, dateProvider: { clock.now })
+        return (bike, controller)
+    }
+
+    @Test
+    func enterSimulationSendsInitialParams() async {
+        let clock = Clock()
+        let (bike, controller) = makeSimController(clock)
+
+        await controller.enterSimulation(initialGrade: 5.0)
+
+        #expect(bike.simParamCalls.count == 1)
+        let call = bike.simParamCalls[0]
+        #expect(call.wind == 0)
+        #expect(call.grade == 5.0)
+        #expect(abs(call.crr - GPXParser.defaultCrr) < 0.0001)
+        #expect(abs(call.cw - GPXParser.defaultCw) < 0.0001)
+        #expect(controller.mode == .simulation)
+        #expect(controller.currentGradePercent == 5.0)
+        // Fresh-into-sim must still issue the request-control + start
+        // handshake — otherwise the trainer can ignore the sim params
+        // until something else nudges it into a controlled mode.
+        #expect(bike.requestControlCalls == 1)
+        #expect(bike.startCalls == 1)
+    }
+
+    @Test
+    func enterSimulationStopsTrainerWhenLeavingERG() async {
+        let clock = Clock()
+        let (bike, controller) = makeSimController(clock)
+        await controller.enableERG(targetWatts: 200)
+        #expect(controller.mode == .erg)
+
+        await controller.enterSimulation(initialGrade: 3)
+
+        // Stop must precede the sim-params write — Wahoo / Tacx trainers
+        // otherwise keep holding the ERG power target after the mode change.
+        #expect(bike.stopOrPauseCalls == [false])
+        #expect(controller.mode == .simulation)
+        #expect(controller.currentTargetWatts == nil)
+    }
+
+    @Test
+    func setGradeIsNoOpWhenNotInSimulationMode() async {
+        let clock = Clock()
+        let (bike, controller) = makeSimController(clock)
+
+        await controller.setGrade(3.0)
+        #expect(bike.simParamCalls.isEmpty)
+        #expect(controller.currentGradePercent == nil)
+    }
+
+    @Test
+    func setGradeThrottlesSmallDeltasInsideOneSecondWindow() async {
+        let clock = Clock()
+        let (bike, controller) = makeSimController(clock)
+
+        await controller.enterSimulation(initialGrade: 5.0)
+        #expect(bike.simParamCalls.count == 1)
+
+        // 10 rapid calls, 100ms apart, each with a tiny delta — only the
+        // initial enter should be on record afterwards.
+        for _ in 0..<10 {
+            clock.advance(by: 0.1)
+            await controller.setGrade(5.05)
+        }
+        #expect(bike.simParamCalls.count == 1)
+    }
+
+    @Test
+    func setGradeAlwaysSendsLargeDeltas() async {
+        let clock = Clock()
+        let (bike, controller) = makeSimController(clock)
+
+        await controller.enterSimulation(initialGrade: 5.0)
+        clock.advance(by: 0.1)
+        // Delta of 2% ≥ simWriteImmediateDelta (1.0) — should bypass throttle.
+        await controller.setGrade(7.0)
+        #expect(bike.simParamCalls.count == 2)
+        #expect(bike.simParamCalls.last?.grade == 7.0)
+    }
+
+    @Test
+    func setGradeSendsAfterThrottleWindow() async {
+        let clock = Clock()
+        let (bike, controller) = makeSimController(clock)
+
+        await controller.enterSimulation(initialGrade: 5.0)
+        // 0.5% delta — small enough to throttle, but after >1s should go through.
+        clock.advance(by: 1.5)
+        await controller.setGrade(5.5)
+        #expect(bike.simParamCalls.count == 2)
+    }
+
+    @Test
+    func setGradeClampsToTwentyPercent() async {
+        let clock = Clock()
+        let (bike, controller) = makeSimController(clock)
+
+        await controller.enterSimulation(initialGrade: 100)
+        #expect(bike.simParamCalls.last?.grade == 20)
+        #expect(controller.currentGradePercent == 20)
+
+        clock.advance(by: 2)
+        await controller.setGrade(-50)
+        #expect(bike.simParamCalls.last?.grade == -20)
+        #expect(controller.currentGradePercent == -20)
+    }
+
+    @Test
+    func enterSimulationOpcodeNotSupportedSurfacesError() async {
+        let clock = Clock()
+        let (bike, controller) = makeSimController(clock)
+        bike.setSimParamError = FTMSError.controlPointError(.opcodeNotSupported)
+
+        await controller.enterSimulation(initialGrade: 5)
+
+        #expect(controller.mode == .off)
+        #expect(controller.lastError == .opcodeNotSupported)
+        #expect(controller.currentGradePercent == nil)
+    }
+
+    @Test
+    func resumeReissuesLastGradeInSimulation() async {
+        let clock = Clock()
+        let (bike, controller) = makeSimController(clock)
+
+        await controller.enterSimulation(initialGrade: 8.0)
+        let before = bike.simParamCalls.count
+        await controller.resume()
+        #expect(bike.simParamCalls.count == before + 1)
+        #expect(bike.simParamCalls.last?.grade == 8.0)
+    }
+
+    @Test
+    func resetClearsSimulationState() async {
+        let clock = Clock()
+        let (_, controller) = makeSimController(clock)
+
+        await controller.enterSimulation(initialGrade: 4)
+        await controller.reset()
+        #expect(controller.mode == .off)
+        #expect(controller.currentGradePercent == nil)
+    }
+
     @Test
     func enableERGFromManualResistanceFlipsModeBack() async {
         let bike = MockFTMSBike(capabilities: defaultCapabilities())

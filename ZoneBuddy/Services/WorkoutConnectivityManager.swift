@@ -37,7 +37,9 @@ final class WorkoutConnectivityManager {
             transitionWarningDuration: transitionWarningDuration,
             intervals: transferIntervals,
             startedAt: Date(),
-            mode: mode.isFreeRide ? "freeride" : nil,
+            // Route Ride has no Watch UI in v1 — bridge as a freeride
+            // so the Watch shows a basic timer instead of an unknown mode.
+            mode: (mode.isFreeRide || mode.isRouteRide) ? "freeride" : nil,
             goalDurationSec: mode.goalTimeSeconds,
             goalDistanceMeters: mode.goalDistanceMeters
         )

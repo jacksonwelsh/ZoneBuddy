@@ -29,6 +29,10 @@ final class FakeBikeConnectionManager: BikeConnecting {
         // Start emitting immediately so views that read the fake before any
         // `autoConnect(...)` call (e.g. mid-onboarding) still see live data.
         startGenerator()
+        // The fake trainer reports sim support — mirror what
+        // `LiveBikeConnectionManager` does so Route Ride UI un-hides in
+        // simulator builds.
+        SettingsManager.shared.hasConnectedSimCapableTrainer = true
     }
 
     func startScanning() {}

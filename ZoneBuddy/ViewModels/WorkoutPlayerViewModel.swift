@@ -265,6 +265,11 @@ final class WorkoutPlayerViewModel {
     private let playlistAutoMix: Bool
 
     let bikeManager: BikeConnecting?
+    #if os(iOS)
+    /// Drives FTMS simulation-mode grade updates from the active route. Nil
+    /// unless `mode` is `.routeRide`.
+    let routeController: RouteProgressionController?
+    #endif
     private let healthKitManager: HealthKitWorkoutRecording?
     private let heartRateStreamer: HeartRateStreaming?
     let ftpTestKind: FTPTestKind?
@@ -326,7 +331,8 @@ final class WorkoutPlayerViewModel {
         shouldPersistSession: Bool = true,
         settings: any SettingsReading = SettingsManager.shared,
         sessionPersister: WorkoutSessionPersisting? = nil,
-        mode: WorkoutMode = .scheduled
+        mode: WorkoutMode = .scheduled,
+        routeController: AnyObject? = nil
     ) {
         self.intervals = intervals
         self.mode = mode
@@ -350,8 +356,13 @@ final class WorkoutPlayerViewModel {
         self.settings = settings
         self.sessionPersister = sessionPersister
         self.audioCuesEnabled = settings.audioCuesEnabled
+        #if os(iOS)
+        self.routeController = routeController as? RouteProgressionController
+        #endif
         if case .freeRide(let goal) = mode, case .time(let s) = goal {
             self.secondsRemaining = s
+        } else if mode.isRouteRide {
+            self.secondsRemaining = 0
         } else if let first = intervals.first {
             self.secondsRemaining = first.duration
         }
@@ -367,7 +378,7 @@ final class WorkoutPlayerViewModel {
     // MARK: - Actions
 
     func start(atElapsedSeconds elapsed: Int = 0) {
-        guard !isRunning && !isFinished && (!intervals.isEmpty || mode.isFreeRide) else { return }
+        guard !isRunning && !isFinished && (!intervals.isEmpty || mode.isUnstructured) else { return }
 
         if elapsed > 0 && !workoutHasStarted {
             totalSecondsAccumulatedBeforePause = TimeInterval(elapsed)
@@ -382,12 +393,15 @@ final class WorkoutPlayerViewModel {
         if !workoutHasStarted {
             workoutHasStarted = true
             startMusicPlayback()
-            if !mode.isFreeRide {
+            if !mode.isUnstructured {
                 speakCurrentLabel(delay: musicPlaybackManager != nil)
             }
             startHealthKitAndHeartRate()
             #if os(iOS)
             applyERGForCurrentInterval()
+            if mode.isRouteRide, let routeController {
+                Task { await routeController.begin() }
+            }
             #endif
         } else {
             // Discard any bike samples that accumulated during the pause,
@@ -416,6 +430,14 @@ final class WorkoutPlayerViewModel {
 
                 let previousIndex = self.currentIntervalIndex
                 self.totalElapsedSeconds = Int(totalElapsed)
+
+                #if os(iOS)
+                // Route ride: advance the route cursor before evaluating
+                // finish state — `recalculateIntervalState` reads
+                // `routeController.isFinished` to flip to the completion UI.
+                self.routeController?.tick(now: currentTime)
+                #endif
+
                 self.recalculateIntervalState(totalElapsed: totalElapsed)
 
                 if self.isFinished {
@@ -426,11 +448,11 @@ final class WorkoutPlayerViewModel {
                     break
                 }
 
-                // Track time spent in each zone (1 second per tick). In Free Ride
-                // there is no prescribed zone, so accumulate based on the actual
-                // power zone — the completion screen reuses scheduledZoneSeconds
-                // to render time-in-zone for the ride.
-                if self.mode.isFreeRide {
+                // Track time spent in each zone (1 second per tick). Unstructured
+                // modes (free ride and route ride) have no prescribed zone, so we
+                // accumulate based on the actual power zone — the completion
+                // screen reuses scheduledZoneSeconds to render time-in-zone.
+                if self.mode.isUnstructured {
                     if let actual = self.actualPowerZone {
                         self.zoneTimeAccumulator[actual, default: 0] += 1
                     }
@@ -466,7 +488,7 @@ final class WorkoutPlayerViewModel {
                     #endif
                 }
 
-                if !self.mode.isFreeRide, self.currentIntervalIndex != previousIndex {
+                if !self.mode.isUnstructured, self.currentIntervalIndex != previousIndex {
                     self.speakCurrentLabel()
                     self.handleFTPTestIntervalTransition(from: previousIndex, to: self.currentIntervalIndex)
                     #if os(iOS)
@@ -593,10 +615,14 @@ final class WorkoutPlayerViewModel {
         if let controller = trainerController {
             Task { await controller.pause() }
         }
+        routeController?.pause()
         #endif
     }
 
     func resume() {
+        #if os(iOS)
+        routeController?.resume()
+        #endif
         start()
         #if os(iOS)
         if let controller = trainerController {
@@ -649,6 +675,9 @@ final class WorkoutPlayerViewModel {
         if let controller = trainerController {
             Task { await controller.reset() }
         }
+        if let routeController {
+            Task { await routeController.reset() }
+        }
         #endif
     }
 
@@ -687,6 +716,14 @@ final class WorkoutPlayerViewModel {
         // Free Ride has no prescribed zone — never auto-apply. The manual
         // trainer sheet still works (ergAvailable stays true).
         if mode.isFreeRide { return }
+
+        // Route Ride owns the trainer (FTMS simulation mode) — never run
+        // ERG logic on top of it. `ergAvailable` is forced false above
+        // anyway in route mode? — set it explicitly here for clarity.
+        if mode.isRouteRide {
+            ergAvailable = false
+            return
+        }
 
         guard let interval = currentInterval else { return }
 
@@ -814,6 +851,19 @@ final class WorkoutPlayerViewModel {
     }
 
     private func recalculateIntervalState(totalElapsed: TimeInterval) {
+        #if os(iOS)
+        if mode.isRouteRide {
+            currentIntervalIndex = 0
+            showTransitionBanner = false
+            secondsRemaining = 0
+            if routeController?.isFinished == true {
+                isFinished = true
+                isRunning = false
+            }
+            return
+        }
+        #endif
+
         if case .freeRide(let goal) = mode {
             currentIntervalIndex = 0
             showTransitionBanner = false
@@ -1181,6 +1231,15 @@ final class WorkoutPlayerViewModel {
                 }()
                 return .ftpTest(protocol: kind, result: result)
             }
+            #if os(iOS)
+            if case .routeRide = mode, let routeController {
+                return .routeRide(
+                    routeID: routeController.route.id,
+                    routeName: routeController.route.name,
+                    totalElevationGainMeters: routeController.elevationGainMeters
+                )
+            }
+            #endif
             return mode.isFreeRide ? .freeRide : .structured
         }()
 
@@ -1206,7 +1265,7 @@ final class WorkoutPlayerViewModel {
             modality: modality
         )
 
-        let snapshots: [SessionInterval] = mode.isFreeRide
+        let snapshots: [SessionInterval] = mode.isUnstructured
             ? []
             : intervals.enumerated().map { index, interval in
                 SessionInterval(

@@ -23,12 +23,16 @@ final class MockFTMSBike: FTMSBikeControlling {
     private(set) var ergCalls: [Int] = []
     private(set) var setPowerCalls: [Int] = []
     private(set) var setResistanceCalls: [Double] = []
+    private(set) var simParamCalls: [(wind: Double, grade: Double, crr: Double, cw: Double)] = []
     private(set) var stopOrPauseCalls: [Bool] = []
+    private(set) var requestControlCalls: Int = 0
+    private(set) var startCalls: Int = 0
     private(set) var resetCalls: Int = 0
 
     // Configurable failures
     var enterErgError: Error?
     var setPowerError: Error?
+    var setSimParamError: Error?
 
     init(capabilities: TrainerCapabilities? = nil) {
         self.currentCapabilities = capabilities
@@ -54,8 +58,31 @@ final class MockFTMSBike: FTMSBikeControlling {
         setResistanceCalls.append(level)
     }
 
+    func setSimulationParameters(
+        windSpeedMS: Double,
+        gradePercent: Double,
+        rollingResistanceCoeff: Double,
+        windResistanceCoeff: Double
+    ) async throws {
+        if let setSimParamError { throw setSimParamError }
+        simParamCalls.append((
+            wind: windSpeedMS,
+            grade: gradePercent,
+            crr: rollingResistanceCoeff,
+            cw: windResistanceCoeff
+        ))
+    }
+
     func stopOrPause(pause: Bool) async throws {
         stopOrPauseCalls.append(pause)
+    }
+
+    func requestControl() async throws {
+        requestControlCalls += 1
+    }
+
+    func start() async throws {
+        startCalls += 1
     }
 
     func reset() async throws {

@@ -13,6 +13,9 @@ enum SessionModality: Codable, Equatable {
     /// An FTP test (20-min or ramp). `result` is nil when the test ended
     /// without producing a valid FTP (e.g. aborted before any 1-min window).
     case ftpTest(protocol: FTPTestKind, result: FTPTestResult?)
+    /// A route ride. Route name + gain are denormalized so the history row
+    /// renders even after the user deletes the source `Route`.
+    case routeRide(routeID: UUID?, routeName: String, totalElevationGainMeters: Double)
 }
 
 /// The output of an FTP test. `measuredFTP` is what the history row displays;

@@ -21,6 +21,7 @@ final class DataStore {
             Interval.self,
             WorkoutSession.self,
             SessionInterval.self,
+            Route.self,
         ])
         let modelConfiguration = ModelConfiguration(
             schema: schema,
@@ -58,6 +59,11 @@ final class DataStore {
 
     func fetchSessions() -> [WorkoutSession] {
         let descriptor = FetchDescriptor<WorkoutSession>(sortBy: [SortDescriptor(\.completedAt, order: .reverse)])
+        return (try? context.fetch(descriptor)) ?? []
+    }
+
+    func fetchRoutes() -> [Route] {
+        let descriptor = FetchDescriptor<Route>(sortBy: [SortDescriptor(\.sortOrder, order: .forward)])
         return (try? context.fetch(descriptor)) ?? []
     }
 

@@ -18,9 +18,15 @@ struct WorkoutPlayerView_iPad: View {
 
     private var isFTPTest: Bool { viewModel.isFTPTest }
     private var isFreeRide: Bool { viewModel.mode.isFreeRide }
+    private var isRouteRide: Bool { viewModel.mode.isRouteRide }
+    private var routeController: RouteProgressionController? { viewModel.routeController }
 
     private var isTrainerControlAvailable: Bool {
-        viewModel.isConnectedToBike
+        // Route Ride owns the trainer in FTMS simulation mode — exposing the
+        // ERG/Level picker would let the user accidentally fight the route's
+        // grade updates. Hide the inline panel entirely.
+        if viewModel.mode.isRouteRide { return false }
+        return viewModel.isConnectedToBike
             && viewModel.trainerController?.capabilities?.powerTargetSettingSupported == true
     }
 
@@ -54,6 +60,7 @@ struct WorkoutPlayerView_iPad: View {
             if case .time = goal { return viewModel.secondsRemaining }
             return viewModel.totalElapsedSeconds
         }
+        if isRouteRide { return viewModel.totalElapsedSeconds }
         return viewModel.secondsRemaining
     }
 
@@ -92,6 +99,7 @@ struct WorkoutPlayerView_iPad: View {
             }
             return viewModel.totalElapsedSeconds
         }
+        if isRouteRide { return viewModel.totalElapsedSeconds }
         let futureSeconds = viewModel.intervals
             .dropFirst(viewModel.currentIntervalIndex + 1)
             .reduce(0) { $0 + $1.duration }
@@ -105,7 +113,16 @@ struct WorkoutPlayerView_iPad: View {
             }
             return "elapsed"
         }
+        if isRouteRide { return "elapsed" }
         return "remaining"
+    }
+
+    /// The top-right "remaining" badge is meaningless when no fixed duration
+    /// exists — hide it in route mode (and free-ride with no goal, which
+    /// already falls back to elapsed but adds visual noise).
+    private var showWorkoutRemainingBadge: Bool {
+        if isRouteRide { return false }
+        return true
     }
 
     var body: some View {
@@ -170,7 +187,7 @@ struct WorkoutPlayerView_iPad: View {
             }
 
             // Workout remaining — top-right corner overlay
-            if !viewModel.isFinished {
+            if !viewModel.isFinished, showWorkoutRemainingBadge {
                 VStack {
                     HStack {
                         Spacer()
@@ -281,44 +298,50 @@ struct WorkoutPlayerView_iPad: View {
     private var topSection: some View {
         VStack(spacing: 16) {
             HStack(alignment: .center, spacing: 32) {
-                // Zone display — no card, number left / name+range right, centered in half
-                HStack(alignment: .center, spacing: 16) {
-                    Group {
-                        if isFTPTest {
-                            Image(systemName: "stopwatch")
-                                .font(.system(size: 60))
+                // Zone display — no card, number left / name+range right, centered in half.
+                // Route Ride takes over the slot with the elevation profile + stats.
+                if isRouteRide, let routeController {
+                    RouteOverviewBlock(routeController: routeController, fgColor: fg)
+                        .frame(maxWidth: .infinity)
+                } else {
+                    HStack(alignment: .center, spacing: 16) {
+                        Group {
+                            if isFTPTest {
+                                Image(systemName: "stopwatch")
+                                    .font(.system(size: 60))
+                                    .foregroundStyle(fg)
+                            } else if let zoneNumber = displayZoneNumber {
+                                Text("\(zoneNumber)")
+                                    .font(.system(size: 80, weight: .bold, design: .rounded))
+                                    .foregroundStyle(currentZoneLabelColor)
+                                    .contentTransition(.numericText())
+                            } else {
+                                Image(systemName: "flame.fill")
+                                    .font(.system(size: 60))
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(displayLabel)
+                                .font(.title3)
+                                .fontWeight(.medium)
                                 .foregroundStyle(fg)
-                        } else if let zoneNumber = displayZoneNumber {
-                            Text("\(zoneNumber)")
-                                .font(.system(size: 80, weight: .bold, design: .rounded))
-                                .foregroundStyle(currentZoneLabelColor)
-                                .contentTransition(.numericText())
-                        } else {
-                            Image(systemName: "flame.fill")
-                                .font(.system(size: 60))
-                                .foregroundStyle(.orange)
+
+                            if let target = viewModel.rampStepTargetWatts {
+                                Text("Target \(target) W")
+                                    .font(.headline)
+                                    .foregroundStyle(fg.opacity(0.85))
+                                    .contentTransition(.numericText())
+                            } else if !isFTPTest, !isFreeRide, let rangeDesc = viewModel.targetRangeDescription {
+                                Text(rangeDesc)
+                                    .font(.headline)
+                                    .foregroundStyle(fg.opacity(0.7))
+                            }
                         }
                     }
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(displayLabel)
-                            .font(.title3)
-                            .fontWeight(.medium)
-                            .foregroundStyle(fg)
-
-                        if let target = viewModel.rampStepTargetWatts {
-                            Text("Target \(target) W")
-                                .font(.headline)
-                                .foregroundStyle(fg.opacity(0.85))
-                                .contentTransition(.numericText())
-                        } else if !isFTPTest, !isFreeRide, let rangeDesc = viewModel.targetRangeDescription {
-                            Text(rangeDesc)
-                                .font(.headline)
-                                .foregroundStyle(fg.opacity(0.7))
-                        }
-                    }
+                    .frame(maxWidth: .infinity)
                 }
-                .frame(maxWidth: .infinity)
 
                 // Playback controls — centered between zone and timer
                 HStack(spacing: 16) {
@@ -365,7 +388,7 @@ struct WorkoutPlayerView_iPad: View {
 
                     PowerZoneBar(
                         ftp: viewModel.currentFTP,
-                        targetZone: isFreeRide ? nil : viewModel.currentInterval?.zone,
+                        targetZone: (isFreeRide || isRouteRide) ? nil : viewModel.currentInterval?.zone,
                         currentPower: viewModel.currentBikeData?.instantaneousPower,
                         compact: false,
                         isPaused: viewModel.isPaused

@@ -13,7 +13,11 @@ struct WorkoutPlayerView_iPhone: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     private var isTrainerControlAvailable: Bool {
-        viewModel.isConnectedToBike
+        // Route Ride owns the trainer in FTMS simulation mode — exposing the
+        // ERG/Level picker would let the user accidentally fight the route's
+        // grade updates. Hide the button entirely.
+        if viewModel.mode.isRouteRide { return false }
+        return viewModel.isConnectedToBike
             && viewModel.trainerController?.capabilities?.powerTargetSettingSupported == true
     }
 
@@ -25,6 +29,8 @@ struct WorkoutPlayerView_iPhone: View {
 
     private var isFTPTest: Bool { viewModel.isFTPTest }
     private var isFreeRide: Bool { viewModel.mode.isFreeRide }
+    private var isRouteRide: Bool { viewModel.mode.isRouteRide }
+    private var routeController: RouteProgressionController? { viewModel.routeController }
 
     /// In FTP test mode, replace the zone-derived label with a phase label
     /// (Warmup / FTP Test / Cooldown). In Free Ride, show actual zone name
@@ -43,6 +49,14 @@ struct WorkoutPlayerView_iPhone: View {
                 return zone.zoneName
             }
             return "Free Ride"
+        }
+        if isRouteRide {
+            // The route name lives in the header overlay; the active page
+            // label shows the current segment's grade as the dominant cue.
+            if let grade = routeController?.currentGradePercent {
+                return String(format: "%+.1f%%", grade)
+            }
+            return "Route Ride"
         }
         return viewModel.currentLabel
     }
@@ -71,6 +85,7 @@ struct WorkoutPlayerView_iPhone: View {
             if case .time = goal { return viewModel.secondsRemaining }
             return viewModel.totalElapsedSeconds
         }
+        if isRouteRide { return viewModel.totalElapsedSeconds }
         return viewModel.secondsRemaining
     }
 
@@ -79,6 +94,7 @@ struct WorkoutPlayerView_iPhone: View {
             if case .time = goal { return "Remaining" }
             return "Elapsed"
         }
+        if isRouteRide { return "Elapsed" }
         return "Remaining"
     }
 
@@ -281,6 +297,9 @@ struct WorkoutPlayerView_iPhone: View {
                         .foregroundStyle(fgColor.opacity(0.85))
                         .contentTransition(.numericText())
                 }
+            } else if isRouteRide, let routeController {
+                RouteOverviewBlock(routeController: routeController, fgColor: fgColor)
+                    .padding(.horizontal, 16)
             } else if let zoneNumber = displayZoneNumber {
                 Text("\(zoneNumber)")
                     .font(.system(size: 200, weight: .bold, design: .rounded))
@@ -294,7 +313,7 @@ struct WorkoutPlayerView_iPhone: View {
 
             // Target watt range below zone number — hidden in FTP test mode
             // (no FTP yet to compute zones from; showing watts would prime pacing).
-            if !isFTPTest, !isFreeRide, let rangeDesc = viewModel.targetRangeDescription {
+            if !isFTPTest, !isFreeRide, !isRouteRide, let rangeDesc = viewModel.targetRangeDescription {
                 Text(rangeDesc)
                     .font(.title2)
                     .fontWeight(.medium)
@@ -324,7 +343,7 @@ struct WorkoutPlayerView_iPhone: View {
             if !isFTPTest, isBikeConnected, settings.layoutPreferences.showPowerBar {
                 PowerZoneBar(
                     ftp: viewModel.currentFTP,
-                    targetZone: isFreeRide ? nil : viewModel.currentInterval?.zone,
+                    targetZone: (isFreeRide || isRouteRide) ? nil : viewModel.currentInterval?.zone,
                     currentPower: viewModel.currentBikeData?.instantaneousPower,
                     compact: true,
                     isPaused: viewModel.isPaused
@@ -427,7 +446,7 @@ struct WorkoutPlayerView_iPhone: View {
                         .fontWeight(.semibold)
                         .foregroundStyle(isBikeConnected ? accentColor : fgColor)
 
-                    if !isFTPTest, !isFreeRide, let rangeDesc = viewModel.targetRangeDescription {
+                    if !isFTPTest, !isFreeRide, !isRouteRide, let rangeDesc = viewModel.targetRangeDescription {
                         Text(rangeDesc)
                             .font(.title2)
                             .fontWeight(.medium)

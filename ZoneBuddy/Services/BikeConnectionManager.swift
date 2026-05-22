@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import FTMSKit
 
 protocol BikeConnecting: Observable {
@@ -54,6 +55,10 @@ final class LiveBikeConnectionManager: BikeConnecting {
     private var scanTask: Task<Void, Never>?
     private var dataStreamTask: Task<Void, Never>?
     private var autoHealTask: Task<Void, Never>?
+    /// Subscribes to the connected bike's feature characteristic so the
+    /// "has ever owned a sim-capable trainer" flag flips as soon as caps
+    /// arrive (typically a beat after `connect` resolves).
+    private var capabilitiesObserver: AnyCancellable?
 
     /// Most recent FTMSDiscoveredDevice we connected to. Used by `attemptReconnect()`.
     private var lastConnectedDevice: FTMSDiscoveredDevice?
@@ -149,6 +154,8 @@ final class LiveBikeConnectionManager: BikeConnecting {
         autoHealTask = nil
         dataStreamTask?.cancel()
         dataStreamTask = nil
+        capabilitiesObserver?.cancel()
+        capabilitiesObserver = nil
 
         if let bike = connectedBike {
             ftms.disconnect(bike)
@@ -220,6 +227,7 @@ final class LiveBikeConnectionManager: BikeConnecting {
                 // A user-initiated connect resets the heal-attempt counter.
                 autoHealAttempts = 0
             }
+            observeSimCapability(on: bike)
             startDataStream(bike: bike)
 
             let settings = SettingsManager.shared
@@ -272,6 +280,26 @@ final class LiveBikeConnectionManager: BikeConnecting {
             autoHealTask?.cancel()
             autoHealTask = nil
         }
+    }
+
+    /// Watches the bike's capabilities publisher until we see Indoor Bike
+    /// Simulation support, then sets the sticky settings flag and tears the
+    /// subscription down. We never clear the flag — "previously owned a
+    /// sim-capable trainer" is the contract that gates Route Ride UI.
+    private func observeSimCapability(on bike: FTMSBike) {
+        capabilitiesObserver?.cancel()
+        if SettingsManager.shared.hasConnectedSimCapableTrainer {
+            capabilitiesObserver = nil
+            return
+        }
+        capabilitiesObserver = bike.capabilitiesPublisher
+            .compactMap { $0 }
+            .filter { $0.simulationParamsSupported }
+            .first()
+            .sink { [weak self] _ in
+                SettingsManager.shared.hasConnectedSimCapableTrainer = true
+                self?.capabilitiesObserver = nil
+            }
     }
 
     /// "Pedaling" signal: power, cadence, or speed > 0. Heart rate is excluded since it can come

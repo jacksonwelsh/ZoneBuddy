@@ -79,6 +79,7 @@
 				Models/HeartRateZone.swift,
 				Models/Interval.swift,
 				Models/PowerZone.swift,
+				Models/Route.swift,
 				Models/SessionInterval.swift,
 				Models/Workout.swift,
 				Models/WorkoutMode.swift,

@@ -2,7 +2,10 @@ import SwiftUI
 import SwiftData
 
 private enum PlayerDestination: Hashable { case player }
-private enum LibraryDestination: Hashable { case freeRideSetup }
+private enum LibraryDestination: Hashable {
+    case freeRideSetup
+    case routeRideSetup
+}
 
 struct WorkoutLibraryView: View {
     @Environment(\.modelContext) private var modelContext
@@ -18,6 +21,11 @@ struct WorkoutLibraryView: View {
                 Section {
                     NavigationLink(value: LibraryDestination.freeRideSetup) {
                         FreeRideCardLabel()
+                    }
+                    if SettingsManager.shared.hasConnectedSimCapableTrainer {
+                        NavigationLink(value: LibraryDestination.routeRideSetup) {
+                            RouteRideCardLabel()
+                        }
                     }
                 }
 
@@ -109,6 +117,8 @@ struct WorkoutLibraryView: View {
                 switch destination {
                 case .freeRideSetup:
                     FreeRideSetupView()
+                case .routeRideSetup:
+                    RouteRideSetupView()
                 }
             }
             .sheet(item: $pendingImport) { data in
@@ -180,6 +190,25 @@ private struct FreeRideCardLabel: View {
                 Text("Free Ride")
                     .font(.headline)
                 Text("No targets — just ride")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+private struct RouteRideCardLabel: View {
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "mountain.2.fill")
+                .font(.title2)
+                .foregroundStyle(.blue)
+                .frame(width: 32)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Route Ride")
+                    .font(.headline)
+                Text("Ride a real-world route")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }

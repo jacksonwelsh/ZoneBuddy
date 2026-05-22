@@ -58,6 +58,15 @@ final class SettingsManager {
         }
     }
 
+    /// Rider mass in kg. Synced via iCloud key-value store so the value
+    /// matches across the user's iPhone + iPad.
+    var riderWeightKg: Double {
+        didSet {
+            store.set(riderWeightKg, forKey: Keys.riderWeightKg)
+            store.synchronize()
+        }
+    }
+
     var layoutPreferences: WorkoutLayoutPreferences {
         didSet {
             if let data = try? JSONEncoder().encode(layoutPreferences) {
@@ -99,6 +108,18 @@ final class SettingsManager {
         }
     }
 
+    /// Set to true the first time we observe a connected trainer that advertises
+    /// FTMS Indoor Bike Simulation support. Used to gate Route Ride UI — the
+    /// mode is hidden entirely until the user has owned a capable trainer at
+    /// least once. Sticky: never reset to false, since "previously owned a
+    /// capable trainer" is the contract.
+    var hasConnectedSimCapableTrainer: Bool {
+        didSet {
+            store.set(hasConnectedSimCapableTrainer, forKey: Keys.hasConnectedSimCapableTrainer)
+            store.synchronize()
+        }
+    }
+
     /// True once the user has completed the first-launch onboarding flow.
     /// Backed by local `UserDefaults` (not iCloud) so a fresh install replays onboarding —
     /// permissions like Bluetooth need to be re-requested after reinstall anyway.
@@ -114,10 +135,12 @@ final class SettingsManager {
         static let playlistTakesOverMusic = "playlistTakesOverMusic"
         static let functionalThresholdPower = "functionalThresholdPower"
         static let maxHeartRate = "maxHeartRate"
+        static let riderWeightKg = "riderWeightKg"
         static let layoutPreferences = "layoutPreferences"
         static let lastConnectedBikeID = "lastConnectedBikeID"
         static let lastConnectedBikeName = "lastConnectedBikeName"
         static let promptForBikeBeforeWorkout = "promptForBikeBeforeWorkout"
+        static let hasConnectedSimCapableTrainer = "hasConnectedSimCapableTrainer"
         static let hasCompletedOnboarding = "hasCompletedOnboarding"
         /// UserDefaults.standard key written by the iOS Settings.app toggle (Settings.bundle).
         /// Read on launch + foreground; if true, we clear `hasCompletedOnboarding` and reset this back to false.
@@ -147,6 +170,9 @@ final class SettingsManager {
         let savedMaxHR = Int(store.longLong(forKey: Keys.maxHeartRate))
         self.maxHeartRate = savedMaxHR == 0 ? 190 : savedMaxHR
 
+        let savedWeight = store.double(forKey: Keys.riderWeightKg)
+        self.riderWeightKg = savedWeight == 0 ? 75 : savedWeight
+
         if let layoutData = store.data(forKey: Keys.layoutPreferences),
            let prefs = try? JSONDecoder().decode(WorkoutLayoutPreferences.self, from: layoutData) {
             self.layoutPreferences = prefs
@@ -162,6 +188,8 @@ final class SettingsManager {
         } else {
             self.promptForBikeBeforeWorkout = store.bool(forKey: Keys.promptForBikeBeforeWorkout)
         }
+
+        self.hasConnectedSimCapableTrainer = store.bool(forKey: Keys.hasConnectedSimCapableTrainer)
 
         self.hasCompletedOnboarding = UserDefaults.standard.bool(forKey: Keys.hasCompletedOnboarding)
 
@@ -196,6 +224,11 @@ final class SettingsManager {
             maxHeartRate = savedMaxHR
         }
 
+        let savedWeight = store.double(forKey: Keys.riderWeightKg)
+        if savedWeight > 0 {
+            riderWeightKg = savedWeight
+        }
+
         if let layoutData = store.data(forKey: Keys.layoutPreferences),
            let prefs = try? JSONDecoder().decode(WorkoutLayoutPreferences.self, from: layoutData) {
             layoutPreferences = prefs
@@ -206,6 +239,13 @@ final class SettingsManager {
 
         if store.object(forKey: Keys.promptForBikeBeforeWorkout) != nil {
             promptForBikeBeforeWorkout = store.bool(forKey: Keys.promptForBikeBeforeWorkout)
+        }
+
+        // Sticky: only adopt the cloud value if it would *upgrade* the local
+        // flag to true. A device that hasn't yet seen its trainer's caps
+        // shouldn't downgrade another device that has.
+        if store.bool(forKey: Keys.hasConnectedSimCapableTrainer) {
+            hasConnectedSimCapableTrainer = true
         }
     }
 

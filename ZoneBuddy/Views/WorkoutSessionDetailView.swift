@@ -29,11 +29,33 @@ struct WorkoutSessionDetailView: View {
         return false
     }
 
+    private var isRouteRide: Bool {
+        if case .routeRide = session.modality { return true }
+        return false
+    }
+
+    /// Unstructured = free ride and route ride both. The power-zone section
+    /// renders "time in zone" without target/adherence framing.
+    private var isUnstructured: Bool { isFreeRide || isRouteRide }
+
+    /// Fetched on-demand for `.routeRide` sessions so the detail view can
+    /// render the elevation profile. Nil if the user has deleted the route
+    /// since the ride completed — the row falls back to gain-only stats.
+    private var matchingRoute: Route? {
+        guard case .routeRide(let routeID, _, _) = session.modality,
+              let routeID else { return nil }
+        let descriptor = FetchDescriptor<Route>(predicate: #Predicate { $0.id == routeID })
+        return try? modelContext.fetch(descriptor).first
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 header
                 structureSection
+                if isRouteRide {
+                    routeProfileSection
+                }
                 metricsGrid
                 if !isFTPTest {
                     powerZoneSection
@@ -221,6 +243,74 @@ struct WorkoutSessionDetailView: View {
     }
 
     @ViewBuilder
+    private var routeProfileSection: some View {
+        if case .routeRide(_, let routeName, let totalGainMeters) = session.modality {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Route")
+                        .font(.headline)
+                    Spacer()
+                    Text(routeName)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                if let route = matchingRoute {
+                    // Elevation profile (no cursor — this is a finished ride).
+                    // Colour up to the distance the rider actually covered;
+                    // anything past is rendered gray so partial rides read
+                    // at a glance.
+                    ElevationProfileView(
+                        route: route,
+                        currentDistanceMeters: 0,
+                        showCursor: false,
+                        completedDistanceMeters: session.totalDistance
+                    )
+                    .frame(height: 120)
+                }
+
+                HStack(spacing: 24) {
+                    routeStat(label: "ELEV. GAIN", value: elevationLabel(totalGainMeters))
+                    if let route = matchingRoute {
+                        routeStat(label: "DISTANCE", value: routeDistanceLabel(route: route))
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func routeStat(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.caption2)
+                .tracking(0.5)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.title3.weight(.semibold))
+                .monospacedDigit()
+        }
+    }
+
+    private func elevationLabel(_ meters: Double) -> String {
+        if UnitFormatting.usesMetric {
+            return "\(Int(meters)) m"
+        } else {
+            return "\(Int(meters * 3.28084)) ft"
+        }
+    }
+
+    private func routeDistanceLabel(route: Route) -> String {
+        let total = UnitFormatting.distance(meters: route.totalDistanceMeters)
+        if let covered = session.totalDistance, covered > 0 {
+            let done = UnitFormatting.distance(meters: covered)
+            return "\(done)/\(total) \(UnitFormatting.distanceUnit)"
+        }
+        return "\(total) \(UnitFormatting.distanceUnit)"
+    }
+
+    @ViewBuilder
     private var metricsGrid: some View {
         let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
         LazyVGrid(columns: columns, spacing: 12) {
@@ -254,9 +344,9 @@ struct WorkoutSessionDetailView: View {
 
     private var powerZoneSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(isFreeRide ? "Time in Power Zones" : "Power Zones — On-Target")
+            Text(isUnstructured ? "Time in Power Zones" : "Power Zones — On-Target")
                 .font(.headline)
-            Text(isFreeRide
+            Text(isUnstructured
                 ? "Total time you spent in each power zone."
                 : "Time you held the prescribed zone during each target interval.")
                 .font(.caption)
@@ -266,7 +356,7 @@ struct WorkoutSessionDetailView: View {
                 ForEach(PowerZone.allCases) { zone in
                     let zoneSeconds = session.scheduledSecondsByZone[zone] ?? 0
                     if zoneSeconds > 0 {
-                        if isFreeRide {
+                        if isUnstructured {
                             PowerZoneAdherenceRow(
                                 zone: zone,
                                 onTargetSeconds: zoneSeconds,

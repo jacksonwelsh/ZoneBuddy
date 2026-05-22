@@ -10,11 +10,13 @@ final class FakeTrainerController: TrainerControlling {
     var capabilities: TrainerCapabilities? = TrainerCapabilities(
         powerTargetSettingSupported: true,
         resistanceTargetSettingSupported: true,
+        simulationParamsSupported: true,
         supportedPowerRange: 50...1000,
         supportedResistanceRange: 0.0...100.0
     )
     private(set) var currentTargetWatts: Int?
     private(set) var currentResistanceLevel: Double?
+    private(set) var currentGradePercent: Double?
     var lastError: TrainerError?
     private(set) var ergUserOverridden: Bool = false
 
@@ -59,6 +61,18 @@ final class FakeTrainerController: TrainerControlling {
         #endif
     }
 
+    func enterSimulation(initialGrade: Double) async {
+        mode = .simulation
+        currentTargetWatts = nil
+        currentResistanceLevel = nil
+        currentGradePercent = initialGrade
+    }
+
+    func setGrade(_ percent: Double) async {
+        guard mode == .simulation else { return }
+        currentGradePercent = percent
+    }
+
     func pause() async {}
     func resume() async {
         if mode == .erg, let target = currentTargetWatts {
@@ -70,6 +84,7 @@ final class FakeTrainerController: TrainerControlling {
         mode = .off
         currentTargetWatts = nil
         currentResistanceLevel = nil
+        currentGradePercent = nil
         ergUserOverridden = false
     }
 }

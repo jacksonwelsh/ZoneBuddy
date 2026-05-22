@@ -49,6 +49,11 @@ struct TrainerControlView: View {
         switch controller?.mode {
         case .manualResistance: return .level
         case .erg: return .erg
+        case .simulation:
+            // Route Ride owns the trainer in this mode; the picker is hidden
+            // by the player UI when this view is presented. Return a sensible
+            // fallback so the binding has a well-defined value.
+            return .erg
         case .off, .none:
             return capabilities?.powerTargetSettingSupported == true ? .erg : .level
         }
