@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import Charts
 import UIKit
 
 // MARK: - Component model
@@ -155,9 +156,22 @@ extension SessionShareCardConfiguration: Codable {
 /// Pure function of (session, configuration) — no state, no side effects.
 struct SessionShareCardView: View {
     let session: WorkoutSession
+    /// Pre-fetched route for route-mode sessions. When provided, the elevation
+    /// profile takes the place of the zone bar in the bottom slot. Nil for
+    /// non-route sessions, or when the source route has been deleted.
+    var route: Route? = nil
     var configuration: SessionShareCardConfiguration = .default
 
     private static let canvasSize: CGFloat = 1080
+
+    /// True when the bottom slot should render the route elevation profile.
+    /// Falls back to the zone bar when no route is attached (incl. non-route
+    /// sessions and route-mode sessions whose source route was deleted).
+    private var showsRouteProfile: Bool {
+        guard case .routeRide = session.modality else { return false }
+        guard let route, !route.points.isEmpty else { return false }
+        return true
+    }
 
     var body: some View {
         ZStack {
@@ -178,8 +192,8 @@ struct SessionShareCardView: View {
 
                 Spacer(minLength: 0)
 
-                if configuration.showZoneBar, !session.sortedIntervals.isEmpty {
-                    zoneBar
+                if configuration.showZoneBar {
+                    bottomVisualization
                         .padding(.bottom, 24)
                 }
 
@@ -320,7 +334,22 @@ struct SessionShareCardView: View {
         }
     }
 
-    // MARK: Zone bar
+    // MARK: Bottom visualization
+
+    /// Route mode shows the elevation profile; everything else shows the
+    /// per-interval zone bar. Both occupy the same slot above the watermark.
+    @ViewBuilder
+    private var bottomVisualization: some View {
+        if showsRouteProfile, let route {
+            ShareCardElevationProfile(
+                route: route,
+                completedDistanceMeters: session.totalDistance
+            )
+            .frame(height: 160)
+        } else if !session.sortedIntervals.isEmpty {
+            zoneBar
+        }
+    }
 
     private var zoneBar: some View {
         let intervals = session.sortedIntervals
@@ -352,6 +381,54 @@ struct SessionShareCardView: View {
             return scheduled.key.color
         }
         return .accentColor
+    }
+}
+
+// MARK: - Share card elevation profile
+
+/// Compact, axis-free elevation chart for the share card. Mirrors the look
+/// of `ElevationProfileView` (grade-bucketed area fills, completion cutoff)
+/// but computes its segments synchronously so `ImageRenderer` captures the
+/// final image on the first pass — `ElevationProfileView`'s `onAppear`
+/// rebuild is unreliable inside the renderer.
+private struct ShareCardElevationProfile: View {
+    let route: Route
+    let completedDistanceMeters: Double?
+
+    private static let maxRenderedPoints = 500
+
+    private var displayedSegments: [RouteElevationSegment] {
+        let decimated = ElevationProfileView.decimate(
+            route.points,
+            maxRendered: Self.maxRenderedPoints
+        )
+        let base = ElevationProfileView.buildSegments(from: decimated)
+        guard let cutoff = completedDistanceMeters, cutoff > 0 else { return base }
+        return ElevationProfileView.applyCompletionCutoff(base, cutoff: cutoff)
+    }
+
+    var body: some View {
+        // `yStart` floors below `minElevation` so the area fills don't leave
+        // a sliver of empty space along the bottom of the chart frame.
+        let yFloor = route.minElevationMeters - 5
+        Chart {
+            ForEach(displayedSegments) { segment in
+                ForEach(segment.points, id: \.distanceMeters) { point in
+                    AreaMark(
+                        x: .value("Distance", point.distanceMeters),
+                        yStart: .value("Floor", yFloor),
+                        yEnd: .value("Elevation", point.elevationMeters),
+                        series: .value("Segment", segment.id)
+                    )
+                    .foregroundStyle(segment.color)
+                    .interpolationMethod(.monotone)
+                }
+            }
+        }
+        .chartLegend(.hidden)
+        .chartXAxis(.hidden)
+        .chartYAxis(.hidden)
+        .chartXScale(domain: 0...max(route.totalDistanceMeters, 1))
     }
 }
 
@@ -588,6 +665,87 @@ private func makePreviewSession(richBikeData: Bool) -> (ModelContainer, WorkoutS
 #Preview("Share Card — HR only") {
     let (container, session) = makePreviewSession(richBikeData: false)
     return SessionShareCardView(session: session)
+        .scaleEffect(0.35)
+        .frame(width: 1080 * 0.35, height: 1080 * 0.35)
+        .modelContainer(container)
+}
+
+@MainActor
+private func makeRoutePreview() -> (ModelContainer, WorkoutSession, Route) {
+    let container = try! ModelContainer(
+        for: WorkoutSession.self, SessionInterval.self, Workout.self, Interval.self, Route.self,
+        configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+    )
+    let context = container.mainContext
+
+    // Synthetic 25 km route: rolling start, sustained climb to ~310 m, descent
+    // back near sea level. Resampled at 50 m steps for a smooth-looking chart.
+    var points: [RoutePoint] = []
+    let totalMeters: Double = 25_000
+    let step: Double = 50
+    var i = 0.0
+    while i <= totalMeters {
+        let t = i / totalMeters
+        // Mix of two sines for a believable elevation curve.
+        let base = 80.0 + 200 * sin(t * .pi)
+        let ripple = 30 * sin(t * .pi * 6)
+        let ele = max(40, base + ripple)
+        // Grade ≈ slope between adjacent points; fill in below.
+        points.append(RoutePoint(
+            distanceMeters: i,
+            elevationMeters: ele,
+            gradePercent: 0,
+            latitude: 0,
+            longitude: 0
+        ))
+        i += step
+    }
+    // Backfill grade for nicer segment colouring.
+    for idx in 1..<points.count {
+        let dz = points[idx].elevationMeters - points[idx - 1].elevationMeters
+        let dx = points[idx].distanceMeters - points[idx - 1].distanceMeters
+        let grade = dx > 0 ? (dz / dx) * 100 : 0
+        let clamped = max(-20, min(20, grade))
+        points[idx] = RoutePoint(
+            distanceMeters: points[idx].distanceMeters,
+            elevationMeters: points[idx].elevationMeters,
+            gradePercent: clamped,
+            latitude: 0, longitude: 0
+        )
+    }
+    let route = Route(name: "Sample Route", points: points)
+    context.insert(route)
+
+    let session = WorkoutSession(
+        name: "Sample Route Ride",
+        completedAt: Date().addingTimeInterval(-3_600 * 3),
+        totalDuration: 62 * 60,
+        avgPower: 165,
+        maxPower: 298,
+        totalOutputKJ: 615,
+        totalDistance: route.totalDistanceMeters,
+        totalCalories: 580,
+        avgHeartRate: 138,
+        maxHeartRate: 172,
+        scheduledZoneSeconds: [.zone1: 600, .zone2: 1_700, .zone3: 1_120],
+        hrZoneSeconds: [.zone1: 400, .zone2: 1_800, .zone3: 1_400, .zone4: 120],
+        ftpAtTime: 215,
+        maxHRAtTime: 188,
+        bikeWasConnected: true,
+        modality: .routeRide(
+            routeID: route.id,
+            routeName: route.name,
+            totalElevationGainMeters: route.totalElevationGainMeters
+        )
+    )
+    context.insert(session)
+    try? context.save()
+    return (container, session, route)
+}
+
+#Preview("Share Card — Route") {
+    let (container, session, route) = makeRoutePreview()
+    return SessionShareCardView(session: session, route: route)
         .scaleEffect(0.35)
         .frame(width: 1080 * 0.35, height: 1080 * 0.35)
         .modelContainer(container)

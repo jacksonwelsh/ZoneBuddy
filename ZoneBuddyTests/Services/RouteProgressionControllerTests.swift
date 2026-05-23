@@ -76,9 +76,15 @@ struct RouteProgressionControllerTests {
     // MARK: - Helpers
 
     /// Build a synthetic 3-segment route: flat 300m → 5% climb to 700m → -3% descent to 1000m.
+    /// Lat/lon trace a straight northward line so `currentPosition()` interpolation
+    /// is testable: distance 0 → (37.0, -122.0), distance 1000m → (37.01, -122.0).
     private func makeTestRoute() -> Route {
         var pts: [RoutePoint] = []
         let step = 5.0
+        let totalDistance = 1000.0
+        let startLat = 37.0
+        let endLat = 37.01
+        let lon = -122.0
         for i in 0...200 {  // 1000m / 5m = 200
             let d = Double(i) * step
             let grade: Double
@@ -93,7 +99,8 @@ struct RouteProgressionControllerTests {
                 grade = -3
                 ele = 120 - (d - 700) * 0.03
             }
-            pts.append(RoutePoint(distanceMeters: d, elevationMeters: ele, gradePercent: grade, latitude: 0, longitude: 0))
+            let lat = startLat + (endLat - startLat) * (d / totalDistance)
+            pts.append(RoutePoint(distanceMeters: d, elevationMeters: ele, gradePercent: grade, latitude: lat, longitude: lon))
         }
         return Route(name: "Test", points: pts)
     }
@@ -287,5 +294,134 @@ struct RouteProgressionControllerTests {
             controller.tick(now: clock.now)
         }
         #expect(controller.progressFraction > 0 && controller.progressFraction < 1)
+    }
+
+    @Test
+    func elevationLossAccumulatesOnDescent() async {
+        let trainer = MockTrainer()
+        let bike = MockBike()
+        let clock = Clock()
+        bike.setSpeed(36)
+        let controller = RouteProgressionController(
+            route: makeTestRoute(),
+            trainerController: trainer,
+            bikeManager: bike,
+            dateProvider: { clock.now }
+        )
+        await controller.begin()
+        controller.tick(now: clock.now)
+        // Ride to the end (~100 ticks @ 10 m/s = 1000m). Descent segment is
+        // 700→1000m at -3%, so loss ≈ 9m.
+        for _ in 0..<120 {
+            clock.advance(by: 1)
+            controller.tick(now: clock.now)
+            if controller.isFinished { break }
+        }
+        await drainTasks()
+        #expect(controller.elevationLossMeters > 7 && controller.elevationLossMeters < 11)
+    }
+
+    @Test
+    func elevationGainAndLossTrackIndependently() async {
+        let trainer = MockTrainer()
+        let bike = MockBike()
+        let clock = Clock()
+        bike.setSpeed(36)
+        let controller = RouteProgressionController(
+            route: makeTestRoute(),
+            trainerController: trainer,
+            bikeManager: bike,
+            dateProvider: { clock.now }
+        )
+        await controller.begin()
+        controller.tick(now: clock.now)
+        for _ in 0..<120 {
+            clock.advance(by: 1)
+            controller.tick(now: clock.now)
+            if controller.isFinished { break }
+        }
+        await drainTasks()
+        // Climb segment 300→700m at +5% climbs 20m. Descent 700→1000m at -3% drops 9m.
+        #expect(controller.elevationGainMeters > 18 && controller.elevationGainMeters < 22)
+        #expect(controller.elevationLossMeters > 7 && controller.elevationLossMeters < 11)
+    }
+
+    @Test
+    func currentPositionBeforeAdvanceReturnsStart() {
+        let trainer = MockTrainer()
+        let bike = MockBike()
+        let controller = RouteProgressionController(
+            route: makeTestRoute(),
+            trainerController: trainer,
+            bikeManager: bike
+        )
+        guard let snap = controller.currentPosition() else {
+            Issue.record("Expected a snapshot at start")
+            return
+        }
+        #expect(snap.distanceMeters == 0)
+        #expect(abs(snap.latitude - 37.0) < 1e-9)
+        #expect(abs(snap.longitude - (-122.0)) < 1e-9)
+        #expect(abs(snap.elevationMeters - 100) < 1e-9)
+    }
+
+    @Test
+    func currentPositionInterpolatesLatLonBetweenPoints() async {
+        let trainer = MockTrainer()
+        let bike = MockBike()
+        let clock = Clock()
+        bike.setSpeed(18)  // 5 m/s — fine-grained advance
+        let controller = RouteProgressionController(
+            route: makeTestRoute(),
+            trainerController: trainer,
+            bikeManager: bike,
+            dateProvider: { clock.now }
+        )
+        await controller.begin()
+        controller.tick(now: clock.now)
+        // Advance 500m total — lat should land halfway between 37.0 and 37.01 = 37.005.
+        for _ in 0..<100 {
+            clock.advance(by: 1)
+            controller.tick(now: clock.now)
+        }
+        await drainTasks()
+        guard let snap = controller.currentPosition() else {
+            Issue.record("Expected a snapshot mid-route")
+            return
+        }
+        #expect(abs(snap.distanceMeters - 500) < 1)
+        // Linear lat interp: at 500m, lat = 37.0 + 0.5 * 0.01 = 37.005.
+        #expect(abs(snap.latitude - 37.005) < 1e-4)
+        #expect(abs(snap.longitude - (-122.0)) < 1e-9)
+    }
+
+    @Test
+    func currentPositionAtRouteEndClampsToFinalPoint() async {
+        let trainer = MockTrainer()
+        let bike = MockBike()
+        let clock = Clock()
+        bike.setSpeed(100)
+        let controller = RouteProgressionController(
+            route: makeTestRoute(),
+            trainerController: trainer,
+            bikeManager: bike,
+            dateProvider: { clock.now }
+        )
+        await controller.begin()
+        controller.tick(now: clock.now)
+        for _ in 0..<60 {
+            clock.advance(by: 1)
+            controller.tick(now: clock.now)
+            if controller.isFinished { break }
+        }
+        await drainTasks()
+        guard let snap = controller.currentPosition() else {
+            Issue.record("Expected a snapshot at finish")
+            return
+        }
+        #expect(controller.isFinished)
+        #expect(snap.distanceMeters == controller.route.totalDistanceMeters)
+        // Final route point sits at lat = 37.01.
+        #expect(abs(snap.latitude - 37.01) < 1e-9)
     }
 }

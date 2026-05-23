@@ -1,4 +1,5 @@
 import Foundation
+import CoreLocation
 
 protocol HealthKitWorkoutRecording {
     /// Live calories from the workout builder (e.g. Watch's HKLiveWorkoutBuilder).
@@ -17,6 +18,14 @@ protocol HealthKitWorkoutRecording {
     func endWorkout(endDate: Date, watchEnergyEstimateKcal: Double?, metadata: [String: Any]) async
     func pauseWorkout()
     func resumeWorkout()
+
+    /// Begin recording an HKWorkoutRoute alongside the current workout. Called
+    /// only for Route mode rides on iOS — Watch and free-ride / structured
+    /// workouts implement this as a no-op.
+    func beginRouteRecording() async
+    /// Append a batch of synthesized CLLocation samples to the in-progress
+    /// HKWorkoutRoute. No-op if `beginRouteRecording()` wasn't called.
+    func addRouteLocations(_ locations: [CLLocation]) async
 }
 
 /// Protocol for streaming heart rate from HealthKit (Apple Watch, AirPods Pro, etc.)

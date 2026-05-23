@@ -1,5 +1,7 @@
 import Testing
 import Foundation
+import CoreLocation
+import HealthKit
 import FTMSKit
 @testable import ZoneBuddy
 
@@ -860,6 +862,205 @@ struct WorkoutPlayerViewModelTests {
         #expect(bike.fakeTrainer.ergUserOverridden == false)
         let target = bike.fakeTrainer.currentTargetWatts ?? 0
         #expect(abs(target - 164) <= 1) // Z3 midpoint at FTP 200
+    }
+
+    // MARK: - Route ride / HealthKit route helpers
+
+    /// Synthetic 1km route with a flat → climb → descent profile and a straight
+    /// northward lat/lon trace. Mirrors the controller test fixture so HK route
+    /// metadata assertions exercise the same shape.
+    private func makeRouteFixture() -> Route {
+        var pts: [RoutePoint] = []
+        let step = 5.0
+        let startLat = 37.0
+        let endLat = 37.01
+        for i in 0...200 {
+            let d = Double(i) * step
+            let grade: Double
+            let ele: Double
+            if d < 300 {
+                grade = 0
+                ele = 100
+            } else if d < 700 {
+                grade = 5
+                ele = 100 + (d - 300) * 0.05
+            } else {
+                grade = -3
+                ele = 120 - (d - 700) * 0.03
+            }
+            let lat = startLat + (endLat - startLat) * (d / 1000.0)
+            pts.append(RoutePoint(distanceMeters: d, elevationMeters: ele, gradePercent: grade, latitude: lat, longitude: -122.0))
+        }
+        return Route(name: "Test Route", points: pts)
+    }
+
+    @Test
+    func routeRideStartCallsBeginRouteRecording() async {
+        var currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        let bike = FreeRideStubBikeManager(power: 200)
+        let healthKit = MockHealthKitWorkoutRecorder()
+        let route = makeRouteFixture()
+        let controller = RouteProgressionController(
+            route: route,
+            trainerController: nil,
+            bikeManager: bike,
+            dateProvider: { currentTime }
+        )
+
+        let vm = WorkoutPlayerViewModel(
+            intervals: [],
+            timerProvider: timer,
+            dateProvider: { currentTime },
+            bikeManager: bike,
+            healthKitManager: healthKit,
+            shouldPersistSession: false,
+            mode: .routeRide(routeID: route.id),
+            routeController: controller
+        )
+
+        vm.start()
+        // requestAuthorization → startWorkout → beginRouteRecording is a three-hop chain.
+        await wait()
+        await wait()
+
+        #expect(healthKit.didBeginRouteRecording == true)
+    }
+
+    @Test
+    func scheduledRideDoesNotCallBeginRouteRecording() async {
+        let currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        let healthKit = MockHealthKitWorkoutRecorder()
+
+        let vm = WorkoutPlayerViewModel(
+            intervals: makeIntervals(),
+            timerProvider: timer,
+            dateProvider: { currentTime },
+            healthKitManager: healthKit,
+            shouldPersistSession: false
+        )
+
+        vm.start()
+        await wait()
+        await wait()
+
+        #expect(healthKit.didBeginRouteRecording == false)
+    }
+
+    @Test
+    func routeRideEndPublishesLocationsAndElevationMetadata() async {
+        var currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        let bike = FreeRideStubBikeManager(power: 200)
+        let healthKit = MockHealthKitWorkoutRecorder()
+        let route = makeRouteFixture()
+        let controller = RouteProgressionController(
+            route: route,
+            trainerController: nil,
+            bikeManager: bike,
+            dateProvider: { currentTime }
+        )
+
+        let vm = WorkoutPlayerViewModel(
+            intervals: [],
+            timerProvider: timer,
+            dateProvider: { currentTime },
+            bikeManager: bike,
+            healthKitManager: healthKit,
+            shouldPersistSession: false,
+            mode: .routeRide(routeID: route.id),
+            routeController: controller
+        )
+
+        vm.start()
+        await wait()
+        await wait()
+
+        // Drive 5 ticks of forward motion — virtual speed at 200W on a flat
+        // grade is several m/s, so distance advances and locations accumulate.
+        for _ in 0..<5 {
+            currentTime.addTimeInterval(1)
+            timer.fire(at: currentTime)
+            await wait()
+        }
+
+        vm.endWorkout()
+        // Final drain + endWorkout Task chain.
+        await wait()
+        await wait()
+
+        #expect(healthKit.addedRouteLocations.count >= 2)
+        // First emitted location should sit on the route's starting coordinate.
+        if let first = healthKit.addedRouteLocations.first {
+            #expect(abs(first.coordinate.latitude - 37.0) < 1e-4)
+            #expect(abs(first.coordinate.longitude - (-122.0)) < 1e-9)
+            #expect(first.horizontalAccuracy > 0)
+            #expect(first.verticalAccuracy > 0)
+        }
+
+        // Metadata must carry HKQuantity-typed elevation keys + route name/ID,
+        // otherwise HealthKit rejects the workout's metadata write.
+        #expect(healthKit.lastMetadata[HKMetadataKeyElevationAscended] is HKQuantity)
+        #expect(healthKit.lastMetadata[HKMetadataKeyElevationDescended] is HKQuantity)
+        #expect((healthKit.lastMetadata["ZoneBuddyRouteName"] as? String) == "Test Route")
+        #expect((healthKit.lastMetadata["ZoneBuddyRouteID"] as? String) == route.id.uuidString)
+    }
+
+    @Test
+    func routeRideStationaryEmitsAtMostStartLocation() async {
+        var currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        // Power=nil forces the controller off the virtual-speed path (whose
+        // cubic root finder converges to a tiny non-zero value at P=0) and
+        // onto the trainer-speed fallback. Trainer speed = 0 km/h → no advance.
+        let bike = FreeRideStubBikeManager(power: 0)
+        bike.latestBikeData = BikeData(
+            instantaneousSpeed: 0,
+            instantaneousCadence: 0,
+            instantaneousPower: nil,
+            timestamp: Date()
+        )
+        let healthKit = MockHealthKitWorkoutRecorder()
+        let route = makeRouteFixture()
+        let controller = RouteProgressionController(
+            route: route,
+            trainerController: nil,
+            bikeManager: bike,
+            dateProvider: { currentTime }
+        )
+
+        let vm = WorkoutPlayerViewModel(
+            intervals: [],
+            timerProvider: timer,
+            dateProvider: { currentTime },
+            bikeManager: bike,
+            healthKitManager: healthKit,
+            shouldPersistSession: false,
+            mode: .routeRide(routeID: route.id),
+            routeController: controller
+        )
+
+        vm.start()
+        await wait()
+        await wait()
+
+        // Several ticks without movement — the distance-advanced gate must
+        // suppress duplicates so we don't stack identical locations.
+        for _ in 0..<6 {
+            currentTime.addTimeInterval(1)
+            timer.fire(at: currentTime)
+            await wait()
+        }
+
+        vm.endWorkout()
+        await wait()
+        await wait()
+
+        // Exactly one location: the start sample emitted on the first tick
+        // (snap.distanceMeters=0 > sentinel=-1). Every subsequent tick fails
+        // the gate (0 > 0 is false).
+        #expect(healthKit.addedRouteLocations.count == 1)
     }
 }
 

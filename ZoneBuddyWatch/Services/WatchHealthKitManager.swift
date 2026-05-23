@@ -1,5 +1,6 @@
 import Foundation
 import HealthKit
+import CoreLocation
 
 @Observable
 final class WatchHealthKitManager: HealthKitWorkoutRecording, HeartRateStreaming {
@@ -107,6 +108,10 @@ final class WatchHealthKitManager: HealthKitWorkoutRecording, HeartRateStreaming
     func resumeWorkout() {
         session?.resume()
     }
+
+    // Route mode is iOS-only — Watch never plays back imported routes.
+    func beginRouteRecording() async {}
+    func addRouteLocations(_ locations: [CLLocation]) async {}
 
     // MARK: - HeartRateStreaming
 

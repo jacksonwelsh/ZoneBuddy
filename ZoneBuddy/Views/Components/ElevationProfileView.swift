@@ -30,7 +30,7 @@ struct ElevationProfileView: View {
     /// don't bleed across the whole x-range — without this, a single
     /// `foregroundStyle(by:)` on AreaMark causes every category to stretch
     /// from x=0 to x=last, painting the chart in overlapping rainbows.
-    @State private var segments: [ProfileSegment] = []
+    @State private var segments: [RouteElevationSegment] = []
 
     /// Tap-to-cycle between the three render modes. Only the cursored modes
     /// are reachable — `showCursor == false` (post-ride summary) leaves the
@@ -103,7 +103,7 @@ struct ElevationProfileView: View {
     /// 5m resampling, cheap to rebuild on each tick). If a completion
     /// cutoff is set, the result is post-processed to recolour everything
     /// past the cutoff in gray.
-    private var displayedSegments: [ProfileSegment] {
+    private var displayedSegments: [RouteElevationSegment] {
         let base = displayMode == .elevationZoomed
             ? Self.buildSegments(from: zoomWindowPoints())
             : segments
@@ -153,33 +153,34 @@ struct ElevationProfileView: View {
     }
 
     private func rebuild() {
-        let all = route.points
-        let decimated: [RoutePoint]
-        if all.count <= Self.maxRenderedPoints {
-            decimated = all
-        } else {
-            let stride = Int(ceil(Double(all.count) / Double(Self.maxRenderedPoints)))
-            var sampled = Swift.stride(from: 0, to: all.count, by: stride).map { all[$0] }
-            if sampled.last?.distanceMeters != all.last?.distanceMeters,
-               let last = all.last {
-                sampled.append(last)
-            }
-            decimated = sampled
-        }
+        let decimated = Self.decimate(route.points, maxRendered: Self.maxRenderedPoints)
         renderedPoints = decimated
         segments = Self.buildSegments(from: decimated)
+    }
+
+    /// Stride-sample a point array down to `maxRendered`, always retaining
+    /// the last point so the chart's right edge reaches the route's end.
+    static func decimate(_ points: [RoutePoint], maxRendered: Int) -> [RoutePoint] {
+        guard points.count > maxRendered, maxRendered > 0 else { return points }
+        let stride = Int(ceil(Double(points.count) / Double(maxRendered)))
+        var sampled = Swift.stride(from: 0, to: points.count, by: stride).map { points[$0] }
+        if sampled.last?.distanceMeters != points.last?.distanceMeters,
+           let last = points.last {
+            sampled.append(last)
+        }
+        return sampled
     }
 
     /// Walk pre-built segments and recolour any region past `cutoff` to
     /// gray. The segment that straddles the cutoff is split with an
     /// interpolated boundary point so the colour change lands on the
     /// exact distance instead of jumping to the next 5m resample step.
-    private static func applyCompletionCutoff(
-        _ segments: [ProfileSegment],
+    static func applyCompletionCutoff(
+        _ segments: [RouteElevationSegment],
         cutoff: Double
-    ) -> [ProfileSegment] {
+    ) -> [RouteElevationSegment] {
         let grayColour = Color.gray.opacity(0.35)
-        var result: [ProfileSegment] = []
+        var result: [RouteElevationSegment] = []
         result.reserveCapacity(segments.count + 1)
 
         for segment in segments {
@@ -189,14 +190,14 @@ struct ElevationProfileView: View {
 
             if lastD <= cutoff {
                 // Fully completed — keep the original colour.
-                result.append(ProfileSegment(
+                result.append(RouteElevationSegment(
                     id: result.count,
                     color: segment.color,
                     points: segment.points
                 ))
             } else if firstD >= cutoff {
                 // Entirely past the cutoff — gray it out.
-                result.append(ProfileSegment(
+                result.append(RouteElevationSegment(
                     id: result.count,
                     color: grayColour,
                     points: segment.points
@@ -232,14 +233,14 @@ struct ElevationProfileView: View {
                     after.insert(interp, at: 0)
                 }
                 if !before.isEmpty {
-                    result.append(ProfileSegment(
+                    result.append(RouteElevationSegment(
                         id: result.count,
                         color: segment.color,
                         points: before
                     ))
                 }
                 if !after.isEmpty {
-                    result.append(ProfileSegment(
+                    result.append(RouteElevationSegment(
                         id: result.count,
                         color: grayColour,
                         points: after
@@ -253,9 +254,9 @@ struct ElevationProfileView: View {
     /// Split into consecutive runs of the same bucket. The transition point
     /// is included in BOTH the closing and the opening segment so the two
     /// adjacent areas meet visually instead of leaving a sliver gap.
-    private static func buildSegments(from points: [RoutePoint]) -> [ProfileSegment] {
+    static func buildSegments(from points: [RoutePoint]) -> [RouteElevationSegment] {
         guard !points.isEmpty else { return [] }
-        var result: [ProfileSegment] = []
+        var result: [RouteElevationSegment] = []
         var current: [RoutePoint] = [points[0]]
         var currentBucket = gradeBucket(points[0].gradePercent)
 
@@ -265,7 +266,7 @@ struct ElevationProfileView: View {
                 // Close out the current run with the transition point so the
                 // outgoing colour reaches the boundary.
                 current.append(points[i])
-                result.append(ProfileSegment(
+                result.append(RouteElevationSegment(
                     id: result.count,
                     color: bucketColor(currentBucket),
                     points: current
@@ -277,7 +278,7 @@ struct ElevationProfileView: View {
                 current.append(points[i])
             }
         }
-        result.append(ProfileSegment(
+        result.append(RouteElevationSegment(
             id: result.count,
             color: bucketColor(currentBucket),
             points: current
@@ -324,7 +325,10 @@ struct ElevationProfileView: View {
     }
 }
 
-private struct ProfileSegment: Identifiable {
+/// One contiguous run of route points sharing the same grade-colour bucket.
+/// Lifted out of `ElevationProfileView` so the share-card snapshot can reuse
+/// the same segment-building pipeline.
+struct RouteElevationSegment: Identifiable {
     let id: Int
     let color: Color
     let points: [RoutePoint]

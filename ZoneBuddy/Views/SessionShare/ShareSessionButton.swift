@@ -44,10 +44,21 @@ private struct SessionSharePreviewSheet: View {
     let session: WorkoutSession
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var systemColorScheme
+    @Environment(\.modelContext) private var modelContext
 
     @State private var configuration: SessionShareCardConfiguration = ShareCardPreferencesStore.load()
     @State private var renderedImage: Image?
     @State private var isCustomizing = false
+
+    /// Fetched on-demand for `.routeRide` sessions so the share card can
+    /// render the elevation profile. Nil if the user has deleted the route
+    /// since the ride completed — the card falls back to the zone bar.
+    private var matchingRoute: Route? {
+        guard case .routeRide(let routeID, _, _) = session.modality,
+              let routeID else { return nil }
+        let descriptor = FetchDescriptor<Route>(predicate: #Predicate { $0.id == routeID })
+        return try? modelContext.fetch(descriptor).first
+    }
 
     var body: some View {
         NavigationStack {
@@ -136,8 +147,12 @@ private struct SessionSharePreviewSheet: View {
         // ImageRenderer doesn't inherit the surrounding environment's colorScheme, so
         // resolve "system" to the current device scheme before handing the view off.
         let resolvedScheme = configuration.colorScheme.swiftUI ?? systemColorScheme
-        let view = SessionShareCardView(session: session, configuration: configuration)
-            .environment(\.colorScheme, resolvedScheme)
+        let view = SessionShareCardView(
+            session: session,
+            route: matchingRoute,
+            configuration: configuration
+        )
+        .environment(\.colorScheme, resolvedScheme)
         let renderer = ImageRenderer(content: view)
         renderer.proposedSize = ProposedViewSize(width: 1080, height: 1080)
         renderer.scale = 1.0

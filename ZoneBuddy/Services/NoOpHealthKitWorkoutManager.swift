@@ -1,5 +1,6 @@
 #if DEBUG
 import Foundation
+import CoreLocation
 
 /// Debug-only `HealthKitWorkoutRecording` that does nothing. Selected by
 /// `HealthKitWorkoutProvider` when fakes are enabled and `preventHealthKitWrite`
@@ -15,5 +16,7 @@ final class NoOpHealthKitWorkoutManager: HealthKitWorkoutRecording {
     func endWorkout(endDate: Date, watchEnergyEstimateKcal: Double?, metadata: [String: Any]) async {}
     func pauseWorkout() {}
     func resumeWorkout() {}
+    func beginRouteRecording() async {}
+    func addRouteLocations(_ locations: [CLLocation]) async {}
 }
 #endif

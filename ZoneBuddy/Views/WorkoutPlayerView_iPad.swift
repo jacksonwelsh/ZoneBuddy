@@ -465,7 +465,7 @@ struct WorkoutPlayerView_iPad: View {
             if settings.layoutPreferences.showDistance {
                 DataTile(isVisible: true) {
                     DistanceTile(
-                        distance: viewModel.computedDistanceMeters > 0 ? viewModel.computedDistanceMeters : nil,
+                        distance: viewModel.currentTotalDistance > 0 ? viewModel.currentTotalDistance : nil,
                         foregroundColor: fg
                     )
                 }

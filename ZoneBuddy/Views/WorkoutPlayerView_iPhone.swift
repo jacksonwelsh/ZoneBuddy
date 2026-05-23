@@ -594,7 +594,7 @@ struct WorkoutPlayerView_iPhone: View {
                     if settings.layoutPreferences.showDistance {
                         DataTile(isVisible: true) {
                             DistanceTile(
-                                distance: viewModel.computedDistanceMeters > 0 ? viewModel.computedDistanceMeters : nil,
+                                distance: viewModel.currentTotalDistance > 0 ? viewModel.currentTotalDistance : nil,
                                 foregroundColor: fgColor
                             )
                         }

@@ -1,9 +1,12 @@
 import Foundation
 import HealthKit
+import CoreLocation
 
 final class LiveHealthKitWorkoutManager: HealthKitWorkoutRecording {
     private let healthStore = HKHealthStore()
     private var workoutBuilder: HKWorkoutBuilder?
+    private var routeBuilder: HKWorkoutRouteBuilder?
+    private var routeLocationCount: Int = 0
 
     // Energy and distance are accumulated across all flush batches and written as
     // a single sample at endWorkout. Per-batch writes truncated kcal to Int and
@@ -22,6 +25,7 @@ final class LiveHealthKitWorkoutManager: HealthKitWorkoutRecording {
 
         let typesToShare: Set<HKSampleType> = [
             HKObjectType.workoutType(),
+            HKSeriesType.workoutRoute(),
             HKQuantityType(.cyclingPower),
             HKQuantityType(.cyclingCadence),
             HKQuantityType(.heartRate),
@@ -56,10 +60,28 @@ final class LiveHealthKitWorkoutManager: HealthKitWorkoutRecording {
             lastSampleDate = nil
             accumulatedJoules = 0
             accumulatedMeters = 0
+            routeBuilder = nil
+            routeLocationCount = 0
             return true
         } catch {
             print("HealthKit start workout error: \(error)")
             return false
+        }
+    }
+
+    func beginRouteRecording() async {
+        guard workoutBuilder != nil, routeBuilder == nil else { return }
+        routeBuilder = HKWorkoutRouteBuilder(healthStore: healthStore, device: .local())
+        routeLocationCount = 0
+    }
+
+    func addRouteLocations(_ locations: [CLLocation]) async {
+        guard let routeBuilder, !locations.isEmpty else { return }
+        do {
+            try await routeBuilder.insertRouteData(locations)
+            routeLocationCount += locations.count
+        } catch {
+            print("HealthKit insertRouteData error: \(error)")
         }
     }
 
@@ -204,6 +226,17 @@ final class LiveHealthKitWorkoutManager: HealthKitWorkoutRecording {
             enrichedMetadata["ZoneBuddyWatchHRKcal"] = watchKcal
         }
 
+        // Capture and clear the route builder up front so we can finalize it
+        // after `finishWorkout` returns the saved HKWorkout. Apple requires
+        // `finishRoute(with:metadata:)` to be called AFTER the workout exists
+        // in the HealthKit store — reversing the order returns an
+        // "associated workout not found" error and the route is orphaned.
+        let pendingRouteBuilder = routeBuilder
+        let pendingRouteCount = routeLocationCount
+        routeBuilder = nil
+        routeLocationCount = 0
+
+        var savedWorkout: HKWorkout?
         do {
             if !summarySamples.isEmpty {
                 try await builder.addSamples(summarySamples)
@@ -212,9 +245,24 @@ final class LiveHealthKitWorkoutManager: HealthKitWorkoutRecording {
             if !enrichedMetadata.isEmpty {
                 try await builder.addMetadata(enrichedMetadata)
             }
-            try await builder.finishWorkout()
+            savedWorkout = try await builder.finishWorkout()
         } catch {
             print("HealthKit end workout error: \(error)")
+        }
+
+        if let savedWorkout, let pendingRouteBuilder, pendingRouteCount > 0 {
+            var routeMetadata: [String: Any] = [:]
+            if let gain = enrichedMetadata[HKMetadataKeyElevationAscended] {
+                routeMetadata[HKMetadataKeyElevationAscended] = gain
+            }
+            if let loss = enrichedMetadata[HKMetadataKeyElevationDescended] {
+                routeMetadata[HKMetadataKeyElevationDescended] = loss
+            }
+            do {
+                _ = try await pendingRouteBuilder.finishRoute(with: savedWorkout, metadata: routeMetadata.isEmpty ? nil : routeMetadata)
+            } catch {
+                print("HealthKit finishRoute error: \(error)")
+            }
         }
     }
 }

@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 #if os(iOS)
 import FTMSKit
+import CoreLocation
 #endif
 import HealthKit
 
@@ -241,9 +242,19 @@ final class WorkoutPlayerViewModel {
         return nil
     }
 
-    /// Distance computed by integrating speed samples over time (meters).
+    /// Canonical distance for display and persistence (meters). Route rides
+    /// report the route-progression distance — physics-based virtual speed
+    /// integrated against grade, clamped to the route length at the finish
+    /// line — so the stat card, elevation graph, and History all agree. Every
+    /// other mode integrates the trainer's reported flywheel speed, which has
+    /// no notion of grade and would diverge from the route position.
     var currentTotalDistance: Double {
-        computedDistanceMeters
+        #if os(iOS)
+        if mode.isRouteRide, let routeController {
+            return routeController.distanceMeters
+        }
+        #endif
+        return computedDistanceMeters
     }
 
     // MARK: - Private
@@ -289,6 +300,15 @@ final class WorkoutPlayerViewModel {
     /// Running distance in meters, computed by integrating speed over time from bike samples.
     private(set) var computedDistanceMeters: Double = 0
     private var lastSpeedSampleDate: Date?
+
+    #if os(iOS)
+    private var routeLocationBuffer: [CLLocation] = []
+    /// Sentinel: distance at which we last appended a route sample. Gating
+    /// emission on `distanceMeters > this` suppresses duplicate samples while
+    /// paused, at 0 km/h, or before the first integration tick.
+    private var lastRouteLocationDistance: Double = -1
+    private var lastRouteLocation: CLLocation?
+    #endif
 
     private var timerTask: Task<Void, Never>?
     private var workoutStartDate: Date?
@@ -436,6 +456,9 @@ final class WorkoutPlayerViewModel {
                 // finish state — `recalculateIntervalState` reads
                 // `routeController.isFinished` to flip to the completion UI.
                 self.routeController?.tick(now: currentTime)
+                if self.mode.isRouteRide {
+                    self.captureRouteLocationIfAdvanced(at: currentTime)
+                }
                 #endif
 
                 self.recalculateIntervalState(totalElapsed: totalElapsed)
@@ -960,6 +983,9 @@ final class WorkoutPlayerViewModel {
                 if authorized {
                     let started = await healthKitManager.startWorkout(startDate: startDate)
                     if started {
+                        if self.mode.isRouteRide {
+                            await healthKitManager.beginRouteRecording()
+                        }
                         startHealthKitFlushLoop()
                     }
                 }
@@ -1015,6 +1041,13 @@ final class WorkoutPlayerViewModel {
             filteredBikeSamples = bikeSamples
         }
 
+        #if os(iOS)
+        let pendingLocations = routeLocationBuffer
+        routeLocationBuffer.removeAll(keepingCapacity: true)
+        #else
+        let pendingLocations: [Never] = []
+        #endif
+
         Task {
             if !filteredBikeSamples.isEmpty {
                 await healthKitManager.addSamples(filteredBikeSamples)
@@ -1022,6 +1055,13 @@ final class WorkoutPlayerViewModel {
             if !hrSamples.isEmpty {
                 await healthKitManager.addHeartRateSamples(hrSamples)
             }
+            #if os(iOS)
+            if !pendingLocations.isEmpty {
+                await healthKitManager.addRouteLocations(pendingLocations)
+            }
+            #else
+            _ = pendingLocations
+            #endif
         }
     }
 
@@ -1031,6 +1071,61 @@ final class WorkoutPlayerViewModel {
         computedDistanceMeters += meters
         lastSpeedSampleDate = last
     }
+
+    #if os(iOS)
+    /// Emit one CLLocation for the route's HKWorkoutRoute when the rider has
+    /// advanced since the last sample. The distance gate is what stops us from
+    /// stacking duplicates while paused, idle at 0 km/h, or before the route
+    /// controller has established its tick baseline.
+    private func captureRouteLocationIfAdvanced(at timestamp: Date) {
+        guard let snap = routeController?.currentPosition() else { return }
+        guard snap.distanceMeters > lastRouteLocationDistance else { return }
+
+        let speedMS: CLLocationSpeed
+        let course: CLLocationDirection
+        if let prev = lastRouteLocation {
+            let dt = timestamp.timeIntervalSince(prev.timestamp)
+            speedMS = dt > 0 ? max(0, (snap.distanceMeters - lastRouteLocationDistance) / dt) : 0
+            course = Self.bearingDegrees(
+                fromLat: prev.coordinate.latitude, fromLon: prev.coordinate.longitude,
+                toLat: snap.latitude, toLon: snap.longitude
+            )
+        } else {
+            speedMS = 0
+            course = -1   // CoreLocation sentinel: course unavailable
+        }
+
+        // 5m accuracy mimics realistic outdoor GPS. HKWorkoutRouteBuilder
+        // silently drops locations with negative accuracy values, so any
+        // positive number is safe; staying close to plausible GPS noise keeps
+        // Health.app's route filtering heuristics happy.
+        let location = CLLocation(
+            coordinate: CLLocationCoordinate2D(latitude: snap.latitude, longitude: snap.longitude),
+            altitude: snap.elevationMeters,
+            horizontalAccuracy: 5,
+            verticalAccuracy: 5,
+            course: course,
+            speed: speedMS,
+            timestamp: timestamp
+        )
+
+        routeLocationBuffer.append(location)
+        lastRouteLocationDistance = snap.distanceMeters
+        lastRouteLocation = location
+    }
+
+    /// Forward great-circle bearing in degrees [0, 360) from (lat1, lon1) → (lat2, lon2).
+    private static func bearingDegrees(fromLat lat1: Double, fromLon lon1: Double,
+                                       toLat lat2: Double, toLon lon2: Double) -> CLLocationDirection {
+        let phi1 = lat1 * .pi / 180
+        let phi2 = lat2 * .pi / 180
+        let dLon = (lon2 - lon1) * .pi / 180
+        let y = sin(dLon) * cos(phi2)
+        let x = cos(phi1) * sin(phi2) - sin(phi1) * cos(phi2) * cos(dLon)
+        let theta = atan2(y, x)
+        return fmod((theta * 180 / .pi) + 360, 360)
+    }
+    #endif
 
     private func handleFTPTestIntervalTransition(from previousIndex: Int, to newIndex: Int) {
         guard let range = sampleIntervalRange else { return }
@@ -1148,7 +1243,7 @@ final class WorkoutPlayerViewModel {
         workoutSummary = WorkoutSummary(
             avgPower: summaryAvgPower,
             maxPower: summaryMaxPower,
-            totalDistance: computedDistanceMeters,
+            totalDistance: currentTotalDistance,
             totalCalories: displayedCalories,
             totalOutputKJ: totalOutputKJ,
             avgHeartRate: summaryAvgHR,
@@ -1173,6 +1268,21 @@ final class WorkoutPlayerViewModel {
         if totalOutputKJ > 0 {
             metadata["TotalOutputKJ"] = totalOutputKJ
         }
+
+        if mode.isRouteRide, let routeController {
+            // `HKMetadataKeyElevationAscended`/`Descended` REQUIRE HKQuantity
+            // values — passing a Double throws errorInvalidArgument and the
+            // workout fails to save its metadata.
+            metadata[HKMetadataKeyElevationAscended] =
+                HKQuantity(unit: .meter(), doubleValue: routeController.elevationGainMeters)
+            metadata[HKMetadataKeyElevationDescended] =
+                HKQuantity(unit: .meter(), doubleValue: routeController.elevationLossMeters)
+            metadata["ZoneBuddyRouteName"] = routeController.route.name
+            metadata["ZoneBuddyRouteID"] = routeController.route.id.uuidString
+        }
+
+        let finalRouteLocations = routeLocationBuffer
+        routeLocationBuffer.removeAll()
 
         // Strip bike HR from remaining samples if we have Watch HR
         let hasWatchHR = !finalHRSamples.isEmpty
@@ -1201,6 +1311,9 @@ final class WorkoutPlayerViewModel {
             }
             if !finalHRSamples.isEmpty {
                 await healthKitManager.addHeartRateSamples(finalHRSamples)
+            }
+            if !finalRouteLocations.isEmpty {
+                await healthKitManager.addRouteLocations(finalRouteLocations)
             }
             await healthKitManager.endWorkout(endDate: endDate, watchEnergyEstimateKcal: watchEnergyKcal, metadata: metadata)
         }
@@ -1252,7 +1365,7 @@ final class WorkoutPlayerViewModel {
             avgPower: avgPower > 0 ? avgPower : nil,
             maxPower: maxPower > 0 ? maxPower : nil,
             totalOutputKJ: totalOutputKJ > 0 ? totalOutputKJ : nil,
-            totalDistance: computedDistanceMeters > 0 ? computedDistanceMeters : nil,
+            totalDistance: currentTotalDistance > 0 ? currentTotalDistance : nil,
             totalCalories: computedCalories > 0 ? computedCalories : nil,
             avgHeartRate: avgHeartRate,
             maxHeartRate: maxHeartRate,

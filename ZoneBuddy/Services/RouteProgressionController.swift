@@ -1,6 +1,16 @@
 import Foundation
 import FTMSKit
 
+/// Interpolated position along a route at the current playback cursor. Carries
+/// everything needed to materialize an HKWorkoutRoute `CLLocation`.
+struct RoutePositionSnapshot: Sendable, Equatable {
+    let distanceMeters: Double
+    let elevationMeters: Double
+    let latitude: Double
+    let longitude: Double
+    let gradePercent: Double
+}
+
 /// Drives a `Route` playback during a Route Ride: integrates measured speed
 /// from a connected trainer into a position along the route, looks up the
 /// smoothed grade at that position, and pushes it to the trainer in
@@ -16,6 +26,7 @@ final class RouteProgressionController {
     let route: Route
     private(set) var distanceMeters: Double = 0
     private(set) var elevationGainMeters: Double = 0
+    private(set) var elevationLossMeters: Double = 0
     private(set) var currentGradePercent: Double = 0
     private(set) var isFinished: Bool = false
     /// Monotonic cursor into `route.points`. Advanced O(1) per tick.
@@ -166,22 +177,45 @@ final class RouteProgressionController {
 
         let nowElevation = currentElevation()
         let dz = nowElevation - prevElevation
-        if dz > 0 { elevationGainMeters += dz }
+        if dz > 0 {
+            elevationGainMeters += dz
+        } else if dz < 0 {
+            elevationLossMeters += -dz
+        }
     }
 
-    /// Linearly interpolate elevation at `distanceMeters` between the cursor
-    /// point and the next one. Lets the gain accumulator behave smoothly
-    /// even when ticks are coarser than the 5m resample step.
-    private func currentElevation() -> Double {
-        guard !routePoints.isEmpty else { return 0 }
+    /// Snapshot of the interpolated position at `distanceMeters`. Mirrors the
+    /// elevation-interpolation strategy for lat/lon so HealthKit `CLLocation`
+    /// samples follow a smooth path between resampled route points.
+    func currentPosition() -> RoutePositionSnapshot? {
+        guard !routePoints.isEmpty else { return nil }
         let lo = routePoints[currentPointIndex]
         if currentPointIndex + 1 >= routePoints.count {
-            return lo.elevationMeters
+            return RoutePositionSnapshot(
+                distanceMeters: distanceMeters,
+                elevationMeters: lo.elevationMeters,
+                latitude: lo.latitude,
+                longitude: lo.longitude,
+                gradePercent: lo.gradePercent
+            )
         }
         let hi = routePoints[currentPointIndex + 1]
         let span = max(hi.distanceMeters - lo.distanceMeters, 0.0001)
         let t = max(0, min(1, (distanceMeters - lo.distanceMeters) / span))
-        return lo.elevationMeters + (hi.elevationMeters - lo.elevationMeters) * t
+        let lat = lo.latitude + (hi.latitude - lo.latitude) * t
+        let lon = lo.longitude + (hi.longitude - lo.longitude) * t
+        let ele = lo.elevationMeters + (hi.elevationMeters - lo.elevationMeters) * t
+        return RoutePositionSnapshot(
+            distanceMeters: distanceMeters,
+            elevationMeters: ele,
+            latitude: lat,
+            longitude: lon,
+            gradePercent: currentGradePercent
+        )
+    }
+
+    private func currentElevation() -> Double {
+        currentPosition()?.elevationMeters ?? 0
     }
 
     private func finish() {

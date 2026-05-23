@@ -1,5 +1,6 @@
 #if DEBUG
 import Foundation
+import CoreLocation
 
 /// Watch-side fake that conforms to both `HealthKitWorkoutRecording` and
 /// `HeartRateStreaming` (matching the dual surface of `WatchHealthKitManager`).
@@ -23,6 +24,8 @@ final class FakeWatchHealthKitManager: HealthKitWorkoutRecording, HeartRateStrea
     }
     func pauseWorkout() {}
     func resumeWorkout() {}
+    func beginRouteRecording() async {}
+    func addRouteLocations(_ locations: [CLLocation]) async {}
 
     func startMonitoring(from startDate: Date) {
         task?.cancel()
