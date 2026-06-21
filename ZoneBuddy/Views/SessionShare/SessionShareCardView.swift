@@ -30,6 +30,16 @@ enum ShareCardComponent: String, CaseIterable, Identifiable, Codable {
         }
     }
 
+    /// Modality-aware variant: on route rides the `.zoneAdherence` slot
+    /// renders elevation gain (no prescribed zones to adhere to), so the
+    /// customization label needs to follow.
+    func displayName(for modality: SessionModality) -> String {
+        if case .zoneAdherence = self, case .routeRide = modality {
+            return "Elevation Gain"
+        }
+        return displayName
+    }
+
     var shortLabel: String {
         switch self {
         case .avgHR:         return "AVG HR"
@@ -326,6 +336,29 @@ struct SessionShareCardView: View {
             guard let kj = session.totalOutputKJ, kj > 0 else { return nil }
             return MetricItem(component: component, label: component.shortLabel, value: String(format: "%.0f", kj), unit: "kJ", icon: "sum", accent: .purple)
         case .zoneAdherence:
+            // Route rides have no prescribed zones, so on-target adherence
+            // would always read 0%. Reuse this slot for elevation gain
+            // instead — it's the route-mode metric with the same "headline
+            // accomplishment" weight.
+            if case .routeRide(_, _, let gainMeters) = session.modality {
+                let value: Int
+                let unit: String
+                if UnitFormatting.usesMetric {
+                    value = Int(gainMeters.rounded())
+                    unit = "m"
+                } else {
+                    value = Int((gainMeters * 3.28084).rounded())
+                    unit = "ft"
+                }
+                return MetricItem(
+                    component: component,
+                    label: "ELEV. GAIN",
+                    value: "\(value)",
+                    unit: unit,
+                    icon: "mountain.2.fill",
+                    accent: .green
+                )
+            }
             let scheduled = session.scheduledSecondsByZone.values.reduce(0, +)
             let onTarget = session.onTargetSecondsByZone.values.reduce(0, +)
             guard scheduled > 0 else { return nil }

@@ -121,6 +121,9 @@ struct WorkoutLibraryView: View {
                     RouteRideSetupView()
                 }
             }
+            .navigationDestination(for: Route.self) { route in
+                RouteRidePreviewView(route: route)
+            }
             .sheet(item: $pendingImport) { data in
                 WorkoutImportView(workoutData: data)
             }
@@ -136,6 +139,9 @@ struct WorkoutLibraryView: View {
                     navigationPath.append(PlayerDestination.player)
                     NavigationManager.shared.shouldStartWorkout = false
                 }
+                // Cold-launch via "Open with ZoneBuddy": the GPX may already be
+                // imported before this view's onChange attaches.
+                showPendingRouteIfNeeded()
             }
             .onChange(of: NavigationManager.shared.shouldStartWorkout) { _, shouldStart in
                 if shouldStart, NavigationManager.shared.selectedWorkout != nil {
@@ -143,7 +149,19 @@ struct WorkoutLibraryView: View {
                     NavigationManager.shared.shouldStartWorkout = false
                 }
             }
+            .onChange(of: NavigationManager.shared.routeToPreview) { _, _ in
+                showPendingRouteIfNeeded()
+            }
         }
+    }
+
+    /// Pushes the route preview for a route imported from outside the app
+    /// (the system file handler). Resets the path so the rider lands cleanly on
+    /// the preview regardless of where they were when the file opened.
+    private func showPendingRouteIfNeeded() {
+        guard let route = NavigationManager.shared.routeToPreview else { return }
+        NavigationManager.shared.routeToPreview = nil
+        navigationPath = NavigationPath([route])
     }
 
     @ViewBuilder

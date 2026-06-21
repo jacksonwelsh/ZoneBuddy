@@ -92,37 +92,60 @@ struct WorkoutPlayerView_iPad: View {
         GridItem(.flexible(), spacing: 16),
     ]
 
-    private var totalWorkoutSecondsRemaining: Int {
-        if isFreeRide {
-            if case .freeRide(let goal) = viewModel.mode, case .time = goal {
-                return viewModel.secondsRemaining
-            }
-            return viewModel.totalElapsedSeconds
+    /// Top-right badge content varies by mode:
+    /// - Zone (scheduled): time remaining + "remaining"
+    /// - Free Ride with time/distance goal & Route Ride: percent complete + "complete"
+    /// - Free Ride with no goal: elapsed + "elapsed"
+    private enum BadgeKind {
+        case timeRemaining(seconds: Int)
+        case percent(Int)
+        case elapsed(seconds: Int)
+    }
+
+    private var badgeKind: BadgeKind {
+        if isRouteRide, let routeController {
+            return .percent(percentInt(routeController.progressFraction))
         }
-        if isRouteRide { return viewModel.totalElapsedSeconds }
+        if case .freeRide(let goal) = viewModel.mode {
+            switch goal {
+            case .time(let seconds):
+                let fraction = seconds > 0
+                    ? Double(viewModel.totalElapsedSeconds) / Double(seconds)
+                    : 0
+                return .percent(percentInt(fraction))
+            case .distance(let meters):
+                let fraction = meters > 0
+                    ? viewModel.currentTotalDistance / meters
+                    : 0
+                return .percent(percentInt(fraction))
+            case nil:
+                return .elapsed(seconds: viewModel.totalElapsedSeconds)
+            }
+        }
         let futureSeconds = viewModel.intervals
             .dropFirst(viewModel.currentIntervalIndex + 1)
             .reduce(0) { $0 + $1.duration }
-        return viewModel.secondsRemaining + futureSeconds
+        return .timeRemaining(seconds: viewModel.secondsRemaining + futureSeconds)
     }
 
-    private var workoutRemainingCaption: String {
-        if isFreeRide {
-            if case .freeRide(let goal) = viewModel.mode, case .time = goal {
-                return "remaining"
-            }
-            return "elapsed"
+    /// Truncated integer percent in [0, 100]. 10.1% → 10, 99.9% → 99, 100% → 100.
+    private func percentInt(_ fraction: Double) -> Int {
+        min(100, max(0, Int(fraction * 100)))
+    }
+
+    private var badgePrimary: String {
+        switch badgeKind {
+        case .timeRemaining(let s), .elapsed(let s): return s.formattedDuration
+        case .percent(let p): return "\(p)%"
         }
-        if isRouteRide { return "elapsed" }
-        return "remaining"
     }
 
-    /// The top-right "remaining" badge is meaningless when no fixed duration
-    /// exists — hide it in route mode (and free-ride with no goal, which
-    /// already falls back to elapsed but adds visual noise).
-    private var showWorkoutRemainingBadge: Bool {
-        if isRouteRide { return false }
-        return true
+    private var badgeCaption: String {
+        switch badgeKind {
+        case .timeRemaining: return "remaining"
+        case .percent: return "complete"
+        case .elapsed: return "elapsed"
+        }
     }
 
     var body: some View {
@@ -187,7 +210,7 @@ struct WorkoutPlayerView_iPad: View {
             }
 
             // Workout remaining — top-right corner overlay
-            if !viewModel.isFinished, showWorkoutRemainingBadge {
+            if !viewModel.isFinished {
                 VStack {
                     HStack {
                         Spacer()
@@ -255,11 +278,11 @@ struct WorkoutPlayerView_iPad: View {
 
     private var workoutRemainingBadge: some View {
         VStack(alignment: .trailing, spacing: 1) {
-            Text(totalWorkoutSecondsRemaining.formattedDuration)
+            Text(badgePrimary)
                 .font(.system(size: 18, weight: .semibold, design: .rounded).monospacedDigit())
                 .foregroundStyle(fg)
                 .contentTransition(.numericText())
-            Text(workoutRemainingCaption)
+            Text(badgeCaption)
                 .font(.caption2)
                 .foregroundStyle(fg.opacity(0.5))
         }

@@ -7,6 +7,11 @@ struct SettingsView: View {
     @State private var maxHRText: String = ""
     @State private var weightText: String = ""
     @State private var weightSyncStatus: WeightSyncStatus = .idle
+    @FocusState private var focusedField: Field?
+
+    private enum Field: Hashable {
+        case ftp, maxHR, weight
+    }
 
     private enum WeightSyncStatus: Equatable {
         case idle
@@ -46,6 +51,7 @@ struct SettingsView: View {
                             .keyboardType(.numberPad)
                             .multilineTextAlignment(.trailing)
                             .frame(width: 80)
+                            .focused($focusedField, equals: .ftp)
                             .onChange(of: ftpText) { _, newValue in
                                 if let value = Int(newValue), (50...500).contains(value) {
                                     settings.functionalThresholdPower = value
@@ -61,6 +67,7 @@ struct SettingsView: View {
                             .keyboardType(.numberPad)
                             .multilineTextAlignment(.trailing)
                             .frame(width: 80)
+                            .focused($focusedField, equals: .maxHR)
                             .onChange(of: maxHRText) { _, newValue in
                                 if let value = Int(newValue), (100...230).contains(value) {
                                     settings.maxHeartRate = value
@@ -88,6 +95,7 @@ struct SettingsView: View {
                             .keyboardType(.decimalPad)
                             .multilineTextAlignment(.trailing)
                             .frame(width: 80)
+                            .focused($focusedField, equals: .weight)
                             .onChange(of: weightText) { _, newValue in
                                 if let value = Double(newValue), (30...250).contains(value) {
                                     settings.riderWeightKg = value
@@ -154,6 +162,25 @@ struct SettingsView: View {
             .navigationBarTitleDisplayMode(.large)
             .background(Color(.systemGroupedBackground))
             .scrollContentBackground(.visible)
+            .safeAreaInset(edge: .bottom) {
+                if focusedField != nil {
+                    HStack {
+                        Spacer()
+                        Button {
+                            focusedField = nil
+                        } label: {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 44, height: 44)
+                                .background(Color.blue, in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.trailing, 16)
+                        .padding(.bottom, 12)
+                    }
+                }
+            }
             .onAppear {
                 ftpText = "\(settings.functionalThresholdPower)"
                 maxHRText = "\(settings.maxHeartRate)"

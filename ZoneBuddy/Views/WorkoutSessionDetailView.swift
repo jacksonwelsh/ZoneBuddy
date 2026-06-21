@@ -265,7 +265,8 @@ struct WorkoutSessionDetailView: View {
                         route: route,
                         currentDistanceMeters: 0,
                         showCursor: false,
-                        completedDistanceMeters: session.totalDistance
+                        completedDistanceMeters: session.totalDistance,
+                        allowsModeCycling: false
                     )
                     .frame(height: 120)
                 }

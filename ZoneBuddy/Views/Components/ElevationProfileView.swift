@@ -15,6 +15,11 @@ struct ElevationProfileView: View {
     /// to indicate the user only rode part of the route. Pass `nil` (default)
     /// to colour the whole route.
     var completedDistanceMeters: Double? = nil
+    /// Whether tapping cycles through render modes. The post-ride summary
+    /// locks to `.elevation`; the live ride and the pre-ride preview allow
+    /// cycling. When there's no cursor the zoomed mode is skipped (it follows
+    /// the cursor, so it's meaningless in a static preview).
+    var allowsModeCycling: Bool = true
 
     private static let maxRenderedPoints = 500
     /// Width of the sliding window in zoomed mode. One mile — the user said
@@ -32,9 +37,8 @@ struct ElevationProfileView: View {
     /// from x=0 to x=last, painting the chart in overlapping rainbows.
     @State private var segments: [RouteElevationSegment] = []
 
-    /// Tap-to-cycle between the three render modes. Only the cursored modes
-    /// are reachable — `showCursor == false` (post-ride summary) leaves the
-    /// view stuck in `.elevation`.
+    /// Tap-to-cycle render mode. Gated by `allowsModeCycling`; the zoomed
+    /// mode is skipped when `showCursor` is false since it tracks the cursor.
     @State private var displayMode: DisplayMode = .elevation
 
     var body: some View {
@@ -88,9 +92,9 @@ struct ElevationProfileView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture {
-            guard showCursor else { return }
+            guard allowsModeCycling else { return }
             withAnimation(.easeInOut(duration: 0.3)) {
-                displayMode = displayMode.next
+                displayMode = nextMode(after: displayMode)
             }
         }
         .onAppear { rebuild() }
@@ -150,6 +154,17 @@ struct ElevationProfileView: View {
         }
         guard loIdx <= hiIdx else { return [] }
         return Array(all[loIdx...hiIdx])
+    }
+
+    /// Next render mode on tap. Skips `.elevationZoomed` when there's no
+    /// cursor — that mode centres on the cursor position, which is
+    /// meaningless in a static preview.
+    private func nextMode(after mode: DisplayMode) -> DisplayMode {
+        let candidate = mode.next
+        if candidate == .elevationZoomed && !showCursor {
+            return candidate.next
+        }
+        return candidate
     }
 
     private func rebuild() {

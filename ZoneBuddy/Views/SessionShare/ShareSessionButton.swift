@@ -104,7 +104,10 @@ private struct SessionSharePreviewSheet: View {
             }
             .sheet(isPresented: $isCustomizing) {
                 NavigationStack {
-                    ShareCardCustomizationView(configuration: $configuration)
+                    ShareCardCustomizationView(
+                        session: session,
+                        configuration: $configuration
+                    )
                 }
                 .presentationDetents([.large, .medium])
             }
@@ -165,6 +168,7 @@ private struct SessionSharePreviewSheet: View {
 // MARK: - Customization
 
 private struct ShareCardCustomizationView: View {
+    let session: WorkoutSession
     @Binding var configuration: SessionShareCardConfiguration
     @Environment(\.dismiss) private var dismiss
 
@@ -185,7 +189,8 @@ private struct ShareCardCustomizationView: View {
                 ForEach(Array(configuration.componentSettings.enumerated()), id: \.element.id) { index, _ in
                     ComponentRow(
                         setting: $configuration.componentSettings[index],
-                        tier: tier(forEnabledIndex: enabledIndex(forSettingsIndex: index))
+                        tier: tier(forEnabledIndex: enabledIndex(forSettingsIndex: index)),
+                        modality: session.modality
                     )
                 }
                 .onMove { indices, newOffset in
@@ -242,6 +247,7 @@ private struct ShareCardCustomizationView: View {
 private struct ComponentRow: View {
     @Binding var setting: SessionShareCardConfiguration.ComponentSetting
     let tier: Tier
+    let modality: SessionModality
 
     enum Tier {
         case large, compact, disabled
@@ -267,7 +273,7 @@ private struct ComponentRow: View {
         HStack {
             Toggle("", isOn: $setting.isEnabled)
                 .labelsHidden()
-            Text(setting.component.displayName)
+            Text(setting.component.displayName(for: modality))
                 .foregroundStyle(setting.isEnabled ? .primary : .secondary)
             Spacer()
             Text(tier.label)
