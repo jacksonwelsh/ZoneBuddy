@@ -256,8 +256,19 @@ private final class GPXSAXDelegate: NSObject, XMLParserDelegate {
             // Elevation is optional in GPX; default to 0 so points without
             // <ele> still anchor the route geometrically (the resulting grade
             // will be 0 across the gap, which is the best we can do).
-            if let lat = currentLat, let lon = currentLon {
-                points.append(GPXParser.RawPoint(lat: lat, lon: lon, ele: currentEle ?? 0))
+            //
+            // Validate the coordinate is a finite, in-range number before
+            // accepting it. `Double.init` parses "nan"/"inf"/"1e400" from a
+            // malformed or hand-edited GPX, and an unchecked NaN/Inf would
+            // poison distance/grade math, get pushed to the trainer as a NaN
+            // grade over BLE, and produce invalid HealthKit/CloudKit samples.
+            // Drop the point entirely if it isn't a valid coordinate, and
+            // discard a non-finite elevation (fall back to 0).
+            if let lat = currentLat, let lon = currentLon,
+               lat.isFinite, lon.isFinite,
+               abs(lat) <= 90, abs(lon) <= 180 {
+                let ele = currentEle.flatMap { $0.isFinite ? $0 : nil } ?? 0
+                points.append(GPXParser.RawPoint(lat: lat, lon: lon, ele: ele))
             }
             currentLat = nil
             currentLon = nil

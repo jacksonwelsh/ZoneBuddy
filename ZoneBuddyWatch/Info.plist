@@ -7,7 +7,6 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>
-		<string>remote-notification</string>
 	</array>
 	<key>NSHealthShareUsageDescription</key>
 	<string>ZoneBuddy reads your heart rate during workouts to display and relay to your iPhone or iPad.</string>

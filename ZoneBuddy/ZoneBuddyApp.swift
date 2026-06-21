@@ -90,6 +90,14 @@ struct ZoneBuddyApp: App {
                     showOnboarding = true
                 }
             }
+            .onChange(of: NavigationManager.shared.shouldStartWorkout) { _, shouldStart in
+                // An App Intent / Siri "Start Workout" sets this flag; the player
+                // itself is pushed by WorkoutLibraryView onto the Workouts tab's
+                // nav stack. If the user last left the app on History/Settings the
+                // player would land on a hidden tab and silently never appear, so
+                // switch to Workouts here — mirroring the GPX-import flow.
+                if shouldStart { selectedTab = .workouts }
+            }
         }
         .modelContainer(DataStore.shared.container)
     }

@@ -692,6 +692,17 @@ final class WorkoutPlayerViewModel {
         let totalElapsed = segmentElapsed + totalSecondsAccumulatedBeforePause
         totalElapsedSeconds = Int(totalElapsed)
         recalculateIntervalState(totalElapsed: totalElapsed)
+
+        // If the scheduled duration elapsed while the timer was throttled in the
+        // background (audio keep-alive inactive / process suspended), the line
+        // above flips `isFinished` but the timer loop never reaches its
+        // finalization block — it breaks on `!isRunning` first. Finalize here so
+        // the completion UI has the saved session + FTP result, exactly like the
+        // timer-driven path. `endWorkout()` is idempotent via `workoutHasStarted`,
+        // so the user's later Done-tap won't double-persist.
+        if isFinished {
+            endWorkout()
+        }
     }
 
     func endWorkout() {
