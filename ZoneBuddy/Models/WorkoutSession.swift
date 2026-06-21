@@ -26,6 +26,21 @@ struct FTPTestResult: Codable, Equatable {
     let sourcePower: Int
 }
 
+/// Where a session is in its Strava upload lifecycle. Stored on the session as a
+/// raw string (`stravaUploadStateRaw`) so adding a state never needs a schema
+/// migration. `notUploaded` is the default for every session — including ones
+/// created before the integration existed.
+enum StravaUploadState: String, Codable, CaseIterable {
+    /// No upload attempted yet (or the user hasn't connected Strava).
+    case notUploaded
+    /// An upload is in flight: file POSTed and/or Strava is still processing it.
+    case uploading
+    /// Strava accepted the activity; `stravaActivityID` holds its id.
+    case uploaded
+    /// The last attempt failed; `stravaUploadError` holds a user-facing reason.
+    case failed
+}
+
 @Model
 final class WorkoutSession {
     var id: UUID = UUID()
@@ -74,6 +89,39 @@ final class WorkoutSession {
     var ftpAtTime: Int?
     var maxHRAtTime: Int?
     var bikeWasConnected: Bool = false
+
+    // MARK: - Strava
+
+    /// Raw `StravaUploadState`. Read/write through `stravaUploadState`. Defaults
+    /// to `notUploaded` so pre-integration rows decode correctly.
+    private var stravaUploadStateRaw: String = StravaUploadState.notUploaded.rawValue
+
+    /// Strava activity id once uploaded. Drives the "View on Strava" deep link.
+    var stravaActivityID: Int?
+
+    /// User-facing reason the last upload failed, shown on the detail screen.
+    var stravaUploadError: String?
+
+    /// The TCX file generated at finish time, persisted so a ride can be
+    /// uploaded (or retried) from history long after the in-memory sample/
+    /// location streams that produced it are gone. External storage keeps the
+    /// row light and streams the blob through CloudKit as an asset, matching
+    /// `Route.rawGPX`. Nil for sessions that predate the integration — those
+    /// can't be uploaded (no streams to rebuild the file from).
+    @Attribute(.externalStorage)
+    var stravaTCXData: Data?
+
+    var stravaUploadState: StravaUploadState {
+        get { StravaUploadState(rawValue: stravaUploadStateRaw) ?? .notUploaded }
+        set { stravaUploadStateRaw = newValue.rawValue }
+    }
+
+    /// Whether this session can be sent to Strava. True when a TCX was captured
+    /// at finish time (full per-second streams), or — for older rides that
+    /// predate that capture — when there's enough persisted summary data to
+    /// synthesize a coarse TCX (a non-zero duration). Only a zero-duration row
+    /// with no stored TCX is genuinely unuploadable.
+    var canUploadToStrava: Bool { stravaTCXData != nil || totalDuration > 0 }
 
     // MARK: - Modality
 

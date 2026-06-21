@@ -145,6 +145,8 @@ struct SettingsView: View {
                     }
                 }
 
+                StravaSettingsSection()
+
                 Section("Workout Display") {
                     NavigationLink {
                         WorkoutLayoutEditorView()

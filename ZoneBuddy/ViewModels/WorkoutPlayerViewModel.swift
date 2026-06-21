@@ -287,6 +287,10 @@ final class WorkoutPlayerViewModel {
     private let shouldPersistSession: Bool
     private let settings: any SettingsReading
     private let sessionPersister: WorkoutSessionPersisting?
+    /// Called once a finished session is persisted, to capture/export the ride
+    /// (e.g. build + upload a Strava TCX). Injected on iOS only; nil on watchOS
+    /// and in tests, where finishing a ride performs no export.
+    private let rideExporter: RideExportHandling?
     private var ftpTestStartedAt: Date?
     private var ftpTestEndedAt: Date?
     private var healthKitFlushTask: Task<Void, Never>?
@@ -351,6 +355,7 @@ final class WorkoutPlayerViewModel {
         shouldPersistSession: Bool = true,
         settings: any SettingsReading = SettingsManager.shared,
         sessionPersister: WorkoutSessionPersisting? = nil,
+        rideExporter: RideExportHandling? = nil,
         mode: WorkoutMode = .scheduled,
         routeController: AnyObject? = nil
     ) {
@@ -375,6 +380,7 @@ final class WorkoutPlayerViewModel {
         self.shouldPersistSession = shouldPersistSession
         self.settings = settings
         self.sessionPersister = sessionPersister
+        self.rideExporter = rideExporter
         self.audioCuesEnabled = settings.audioCuesEnabled
         #if os(iOS)
         self.routeController = routeController as? RouteProgressionController
@@ -1283,6 +1289,19 @@ final class WorkoutPlayerViewModel {
 
         let finalRouteLocations = routeLocationBuffer
         routeLocationBuffer.removeAll()
+
+        // Hand the finished, persisted session to the exporter (iOS only) so it
+        // can capture a Strava TCX from the in-memory streams and auto-upload if
+        // enabled. Done here, after `finalRouteLocations` is captured, so route
+        // rides get their GPS map.
+        if let savedSession {
+            rideExporter?.handleFinishedRide(
+                session: savedSession,
+                samples: allBikeSamples,
+                locations: finalRouteLocations,
+                totalCalories: displayedCalories > 0 ? displayedCalories : nil
+            )
+        }
 
         // Strip bike HR from remaining samples if we have Watch HR
         let hasWatchHR = !finalHRSamples.isEmpty

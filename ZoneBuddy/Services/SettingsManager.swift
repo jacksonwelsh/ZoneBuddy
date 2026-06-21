@@ -120,6 +120,26 @@ final class SettingsManager {
         }
     }
 
+    /// When true, completed rides upload to Strava automatically. Off by
+    /// default — a connected user must opt in; otherwise every ride is uploaded
+    /// manually from the history detail screen.
+    var stravaAutoUpload: Bool {
+        didSet {
+            store.set(stravaAutoUpload, forKey: Keys.stravaAutoUpload)
+            store.synchronize()
+        }
+    }
+
+    /// Whether auto-upload also covers FTP tests. Off by default — most riders
+    /// don't want a test on their Strava feed. Manual upload of a test is still
+    /// available regardless.
+    var stravaAutoUploadIncludesFTPTests: Bool {
+        didSet {
+            store.set(stravaAutoUploadIncludesFTPTests, forKey: Keys.stravaAutoUploadIncludesFTPTests)
+            store.synchronize()
+        }
+    }
+
     /// True once the user has completed the first-launch onboarding flow.
     /// Backed by local `UserDefaults` (not iCloud) so a fresh install replays onboarding —
     /// permissions like Bluetooth need to be re-requested after reinstall anyway.
@@ -141,6 +161,8 @@ final class SettingsManager {
         static let lastConnectedBikeName = "lastConnectedBikeName"
         static let promptForBikeBeforeWorkout = "promptForBikeBeforeWorkout"
         static let hasConnectedSimCapableTrainer = "hasConnectedSimCapableTrainer"
+        static let stravaAutoUpload = "stravaAutoUpload"
+        static let stravaAutoUploadIncludesFTPTests = "stravaAutoUploadIncludesFTPTests"
         static let hasCompletedOnboarding = "hasCompletedOnboarding"
         /// UserDefaults.standard key written by the iOS Settings.app toggle (Settings.bundle).
         /// Read on launch + foreground; if true, we clear `hasCompletedOnboarding` and reset this back to false.
@@ -190,6 +212,9 @@ final class SettingsManager {
         }
 
         self.hasConnectedSimCapableTrainer = store.bool(forKey: Keys.hasConnectedSimCapableTrainer)
+
+        self.stravaAutoUpload = store.bool(forKey: Keys.stravaAutoUpload)
+        self.stravaAutoUploadIncludesFTPTests = store.bool(forKey: Keys.stravaAutoUploadIncludesFTPTests)
 
         self.hasCompletedOnboarding = UserDefaults.standard.bool(forKey: Keys.hasCompletedOnboarding)
 
@@ -246,6 +271,13 @@ final class SettingsManager {
         // shouldn't downgrade another device that has.
         if store.bool(forKey: Keys.hasConnectedSimCapableTrainer) {
             hasConnectedSimCapableTrainer = true
+        }
+
+        if store.object(forKey: Keys.stravaAutoUpload) != nil {
+            stravaAutoUpload = store.bool(forKey: Keys.stravaAutoUpload)
+        }
+        if store.object(forKey: Keys.stravaAutoUploadIncludesFTPTests) != nil {
+            stravaAutoUploadIncludesFTPTests = store.bool(forKey: Keys.stravaAutoUploadIncludesFTPTests)
         }
     }
 

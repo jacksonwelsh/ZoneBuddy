@@ -93,6 +93,7 @@
 				Services/FTPTestKind.swift,
 				Services/FTPTestProtocol.swift,
 				Services/HealthKitProtocols.swift,
+				Services/RideExportHandling.swift,
 				Services/SettingsManager.swift,
 				Services/SettingsReading.swift,
 				Services/SimulatorFakes.swift,

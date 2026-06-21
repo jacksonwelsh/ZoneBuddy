@@ -61,6 +61,7 @@ struct WorkoutSessionDetailView: View {
                     powerZoneSection
                 }
                 hrZoneSection
+                StravaUploadRow(session: session)
 
             }
             .padding()

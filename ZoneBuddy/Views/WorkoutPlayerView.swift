@@ -94,6 +94,7 @@ struct WorkoutPlayerView: View {
             heartRateStreamer: hrStreamer,
             ftpTestKind: ftpTestKind,
             sessionPersister: LiveWorkoutSessionPersister(context: DataStore.shared.context),
+            rideExporter: StravaRideExportHandler.shared,
             mode: mode,
             routeController: routeController
         ))
