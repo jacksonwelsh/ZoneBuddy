@@ -46,21 +46,23 @@ final class StravaService {
             mark(session, state: .failed, error: StravaError.notConnected.userMessage)
             return
         }
-        // Use the TCX captured at finish time, or — for an older ride without one
-        // — synthesize one from persisted summary data and keep it so a retry
-        // doesn't rebuild it.
-        guard let tcx = resolvedTCX(for: session) else {
+        // Prefer the FIT/TCX captured at finish time. For an older ride without
+        // either, synthesize a TCX from persisted summary data and retain it so
+        // retries are byte-identical.
+        guard let activityFile = resolvedActivityFile(for: session) else {
             mark(session, state: .failed, error: StravaError.noRideData.userMessage)
             return
         }
-        if session.stravaTCXData == nil {
-            session.stravaTCXData = tcx
+        if session.stravaTCXData == nil, session.stravaFITData == nil,
+           activityFile.format == .tcx {
+            session.stravaTCXData = activityFile.data
         }
 
         mark(session, state: .uploading, error: nil)
 
         let request = StravaUploadRequest(
-            tcx: tcx,
+            fileData: activityFile.data,
+            format: activityFile.format,
             name: session.name,
             description: "Recorded with ZoneBuddy",
             externalID: session.id.uuidString,
@@ -78,11 +80,11 @@ final class StravaService {
         }
     }
 
-    /// The TCX to upload: the one captured at finish time if present, otherwise
-    /// a synthesized one built from the session's persisted summary. Returns nil
-    /// only when there's nothing to reconstruct from (a zero-duration row).
-    private func resolvedTCX(for session: WorkoutSession) -> Data? {
-        if let existing = session.stravaTCXData { return existing }
+    /// The activity file captured at finish time, otherwise a synthetic TCX
+    /// built from the session summary. Returns nil only for a zero-duration row.
+    private func resolvedActivityFile(for session: WorkoutSession) -> (data: Data, format: StravaUploadFormat)? {
+        if let existing = session.stravaFITData { return (existing, .fit) }
+        if let existing = session.stravaTCXData { return (existing, .tcx) }
         guard session.totalDuration > 0 else { return nil }
 
         // True start time = completion minus elapsed duration, so Strava dates
@@ -99,7 +101,7 @@ final class StravaService {
             routePoints = (try? context.fetch(descriptor))?.first?.points
         }
 
-        return TCXBuilder.makeSyntheticTCX(
+        return (TCXBuilder.makeSyntheticTCX(
             startDate: startDate,
             duration: session.totalDuration,
             avgPower: session.avgPower,
@@ -107,7 +109,7 @@ final class StravaService {
             totalDistanceMeters: session.totalDistance,
             totalCalories: session.totalCalories,
             routePoints: routePoints
-        )
+        ), .tcx)
     }
 
     private func mark(_ session: WorkoutSession, state: StravaUploadState, error: String?) {

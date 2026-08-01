@@ -297,6 +297,9 @@ final class WorkoutPlayerViewModel {
     private var allBikeSamples: [BikeDataSample] = []
     private var watchHRBuffer: [(bpm: Int, date: Date)] = []
     private var allHRSamples: [Int] = []
+    private var rideHeartRateSamples: [RideHeartRateSample] = []
+    private var rideTimerSegments: [RideTimerSegment] = []
+    private var rideTimerSegmentStartedAt: Date?
     private var lastBufferedHR: Int?
     private var zoneTimeAccumulator: [PowerZone: Int] = [:]
     private(set) var onTargetZoneAccumulator: [PowerZone: Int] = [:]
@@ -414,6 +417,7 @@ final class WorkoutPlayerViewModel {
         }
 
         workoutStartDate = dateProvider()
+        rideTimerSegmentStartedAt = workoutStartDate
         isRunning = true
 
         if !workoutHasStarted {
@@ -509,6 +513,9 @@ final class WorkoutPlayerViewModel {
                 // Collect HR samples for summary on all platforms; buffer for HealthKit write on iOS only.
                 if let hr = self.heartRateStreamer?.latestHeartRate {
                     self.allHRSamples.append(hr)
+                    self.rideHeartRateSamples.append(
+                        RideHeartRateSample(timestamp: currentTime, beatsPerMinute: hr)
+                    )
                     #if os(iOS)
                     if hr != self.lastBufferedHR {
                         self.watchHRBuffer.append((bpm: hr, date: self.dateProvider()))
@@ -620,7 +627,9 @@ final class WorkoutPlayerViewModel {
         guard isRunning else { return }
 
         if let startDate = workoutStartDate {
-            totalSecondsAccumulatedBeforePause += dateProvider().timeIntervalSince(startDate)
+            let pauseDate = dateProvider()
+            totalSecondsAccumulatedBeforePause += pauseDate.timeIntervalSince(startDate)
+            closeRideTimerSegment(at: pauseDate)
         }
 
         isRunning = false
@@ -678,6 +687,12 @@ final class WorkoutPlayerViewModel {
         heartRateStreamer?.stopMonitoring()
     }
 
+    private func closeRideTimerSegment(at end: Date) {
+        guard let start = rideTimerSegmentStartedAt, end >= start else { return }
+        rideTimerSegments.append(RideTimerSegment(start: start, end: end))
+        rideTimerSegmentStartedAt = nil
+    }
+
     func startBackgroundKeepAlive() {
         speechCueProvider?.startBackgroundKeepAlive()
     }
@@ -708,6 +723,7 @@ final class WorkoutPlayerViewModel {
     func endWorkout() {
         guard workoutHasStarted else { return }
         workoutHasStarted = false
+        closeRideTimerSegment(at: dateProvider())
         stopWorkout()
         finishHealthKitWorkout()
 
@@ -977,6 +993,9 @@ final class WorkoutPlayerViewModel {
             allBikeSamples = []
         }
         allHRSamples = []
+        rideHeartRateSamples = []
+        rideTimerSegments = []
+        rideTimerSegmentStartedAt = workoutStartDate
         watchHRBuffer = []
         lastBufferedHR = nil
         // Cached cumulative watch-energy estimate is owned by a singleton and
@@ -1302,13 +1321,15 @@ final class WorkoutPlayerViewModel {
         routeLocationBuffer.removeAll()
 
         // Hand the finished, persisted session to the exporter (iOS only) so it
-        // can capture a Strava TCX from the in-memory streams and auto-upload if
-        // enabled. Done here, after `finalRouteLocations` is captured, so route
-        // rides get their GPS map.
+        // can capture a FIT/TCX from the in-memory streams and auto-upload when
+        // enabled. Done after `finalRouteLocations` is captured so route rides
+        // retain their GPS map.
         if let savedSession {
             rideExporter?.handleFinishedRide(
                 session: savedSession,
                 samples: allBikeSamples,
+                heartRateSamples: rideHeartRateSamples,
+                timerSegments: rideTimerSegments,
                 locations: finalRouteLocations,
                 totalCalories: displayedCalories > 0 ? displayedCalories : nil
             )

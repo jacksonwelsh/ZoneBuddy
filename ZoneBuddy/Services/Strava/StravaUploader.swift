@@ -1,8 +1,16 @@
 import Foundation
 
+enum StravaUploadFormat: String {
+    case fit
+    case tcx
+
+    var fileExtension: String { rawValue }
+}
+
 /// Parameters describing one ride to push to Strava.
 struct StravaUploadRequest {
-    let tcx: Data
+    let fileData: Data
+    let format: StravaUploadFormat
     let name: String
     let description: String?
     /// Session UUID string. Sent as Strava's `external_id` so retries dedupe to
@@ -12,7 +20,7 @@ struct StravaUploadRequest {
     let isVirtual: Bool
 }
 
-/// Uploads a finished ride's TCX to Strava and returns the created activity id.
+/// Uploads a finished ride file to Strava and returns the created activity id.
 protocol StravaUploading {
     func upload(_ request: StravaUploadRequest) async throws -> Int
 }
@@ -85,7 +93,7 @@ final class StravaUploader: StravaUploading {
         urlRequest.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
         var fields: [String: String] = [
-            "data_type": "tcx",
+            "data_type": request.format.rawValue,
             "name": request.name,
             "external_id": request.externalID,
             // All ZoneBuddy rides come from an indoor smart trainer.
@@ -99,8 +107,8 @@ final class StravaUploader: StravaUploading {
             boundary: boundary,
             fields: fields,
             fileField: "file",
-            fileName: "\(request.externalID).tcx",
-            fileData: request.tcx,
+            fileName: "\(request.externalID).\(request.format.fileExtension)",
+            fileData: request.fileData,
             fileContentType: "application/octet-stream"
         )
 

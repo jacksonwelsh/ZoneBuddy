@@ -111,6 +111,13 @@ final class WorkoutSession {
     @Attribute(.externalStorage)
     var stravaTCXData: Data?
 
+    /// FIT is used for newly completed structured indoor rides. Unlike TCX it
+    /// preserves interval laps, timer pause/resume events, device metadata, and
+    /// complete session aggregates in addition to per-second sensor streams.
+    /// Kept alongside `stravaTCXData` so existing sessions remain uploadable.
+    @Attribute(.externalStorage)
+    var stravaFITData: Data?
+
     var stravaUploadState: StravaUploadState {
         get { StravaUploadState(rawValue: stravaUploadStateRaw) ?? .notUploaded }
         set { stravaUploadStateRaw = newValue.rawValue }
@@ -120,8 +127,8 @@ final class WorkoutSession {
     /// at finish time (full per-second streams), or — for older rides that
     /// predate that capture — when there's enough persisted summary data to
     /// synthesize a coarse TCX (a non-zero duration). Only a zero-duration row
-    /// with no stored TCX is genuinely unuploadable.
-    var canUploadToStrava: Bool { stravaTCXData != nil || totalDuration > 0 }
+    /// with no stored FIT/TCX file is genuinely unuploadable.
+    var canUploadToStrava: Bool { stravaFITData != nil || stravaTCXData != nil || totalDuration > 0 }
 
     // MARK: - Modality
 

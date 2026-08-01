@@ -1,0 +1,24 @@
+{
+  "originHash" : "c1d12e912912affd5b8b48d9ab8550c634168aaa4cf840d29cd1a5ba439ad154",
+  "pins" : [
+    {
+      "identity" : "fit-swift-sdk",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/garmin/fit-swift-sdk.git",
+      "state" : {
+        "revision" : "c63062e86c241772e303f6d9f61a7be0e8a839cb",
+        "version" : "21.205.0"
+      }
+    },
+    {
+      "identity" : "swift-collections",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-collections.git",
+      "state" : {
+        "revision" : "8c0c0a8b49e080e54e5e328cc552821ff07cd341",
+        "version" : "1.2.1"
+      }
+    }
+  ],
+  "version" : 3
+}

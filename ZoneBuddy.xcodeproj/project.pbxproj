@@ -11,6 +11,8 @@
 		640000012F50000000000001 /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 640000002F50000000000001 /* HealthKit.framework */; settings = {ATTRIBUTES = (Weak, ); }; };
 		643634F62F60EC1E00C17361 /* FTMSKit in Frameworks */ = {isa = PBXBuildFile; productRef = 640000112F50000000000011 /* FTMSKit */; };
 		64363B7E00010000000C1736 /* FTMSKit in Frameworks */ = {isa = PBXBuildFile; productRef = 64363B7F00010000000C1736 /* FTMSKit */; };
+		64F170010000000000000001 /* FITSwiftSDK in Frameworks */ = {isa = PBXBuildFile; productRef = 64F170030000000000000001 /* FITSwiftSDK */; };
+		64F170020000000000000001 /* FITSwiftSDK in Frameworks */ = {isa = PBXBuildFile; productRef = 64F170040000000000000001 /* FITSwiftSDK */; };
 		64FFFF020000000000000002 /* Settings.bundle in Resources */ = {isa = PBXBuildFile; fileRef = 64FFFF010000000000000001 /* Settings.bundle */; };
 /* End PBXBuildFile section */
 
@@ -159,6 +161,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				64F170010000000000000001 /* FITSwiftSDK in Frameworks */,
 				643634F62F60EC1E00C17361 /* FTMSKit in Frameworks */,
 				640000012F50000000000001 /* HealthKit.framework in Frameworks */,
 			);
@@ -168,6 +171,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				64F170020000000000000001 /* FITSwiftSDK in Frameworks */,
 				64363B7E00010000000C1736 /* FTMSKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -259,6 +263,7 @@
 			name = ZoneBuddy;
 			packageProductDependencies = (
 				640000112F50000000000011 /* FTMSKit */,
+				64F170030000000000000001 /* FITSwiftSDK */,
 			);
 			productName = ZoneBuddy;
 			productReference = 64D3B0732F4039A800D06A68 /* ZoneBuddy.app */;
@@ -283,6 +288,7 @@
 			name = ZoneBuddyTests;
 			packageProductDependencies = (
 				64363B7F00010000000C1736 /* FTMSKit */,
+				64F170040000000000000001 /* FITSwiftSDK */,
 			);
 			productName = ZoneBuddyTests;
 			productReference = 64D3B0842F4039AA00D06A68 /* ZoneBuddyTests.xctest */;
@@ -348,6 +354,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				640000102F50000000000010 /* XCLocalSwiftPackageReference "../FTMSKit" */,
+				64F170050000000000000001 /* XCRemoteSwiftPackageReference "fit-swift-sdk" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 64D3B0742F4039A800D06A68 /* Products */;
@@ -856,6 +863,17 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		64F170050000000000000001 /* XCRemoteSwiftPackageReference "fit-swift-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/garmin/fit-swift-sdk.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 21.205.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		640000112F50000000000011 /* FTMSKit */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -866,6 +884,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 640000102F50000000000010 /* XCLocalSwiftPackageReference "../FTMSKit" */;
 			productName = FTMSKit;
+		};
+		64F170030000000000000001 /* FITSwiftSDK */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 64F170050000000000000001 /* XCRemoteSwiftPackageReference "fit-swift-sdk" */;
+			productName = FITSwiftSDK;
+		};
+		64F170040000000000000001 /* FITSwiftSDK */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 64F170050000000000000001 /* XCRemoteSwiftPackageReference "fit-swift-sdk" */;
+			productName = FITSwiftSDK;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

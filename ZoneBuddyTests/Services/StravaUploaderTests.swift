@@ -22,7 +22,8 @@ struct StravaUploaderTests {
 
     private func request(virtual: Bool = false) -> StravaUploadRequest {
         StravaUploadRequest(
-            tcx: Data("<tcx/>".utf8),
+            fileData: Data("<tcx/>".utf8),
+            format: .tcx,
             name: "Morning Ride",
             description: "Recorded with ZoneBuddy",
             externalID: "abc-123",
@@ -86,6 +87,28 @@ struct StravaUploaderTests {
         let activityID = try await makeUploader().upload(request(virtual: true))
         #expect(activityID == 888)
         #expect(sawVirtualPut)
+    }
+
+    @Test
+    func fitUploadUsesFITDataTypeAndFilename() async throws {
+        var body = ""
+        StubURLProtocol.handler = { request in
+            body = String(decoding: request.httpBody ?? Data(), as: UTF8.self)
+            return try StubURLProtocol.jsonResponse(for: request, ["id": 5, "activity_id": 999])
+        }
+        let fitRequest = StravaUploadRequest(
+            fileData: Data([0x0E, 0x20, 0x00, 0x00]),
+            format: .fit,
+            name: "Power Zones",
+            description: nil,
+            externalID: "fit-123",
+            isVirtual: false
+        )
+
+        _ = try await makeUploader().upload(fitRequest)
+
+        #expect(body.contains("name=\"data_type\"\r\n\r\nfit\r\n"))
+        #expect(body.contains("filename=\"fit-123.fit\""))
     }
 
     @Test
