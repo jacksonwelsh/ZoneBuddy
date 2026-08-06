@@ -28,12 +28,4 @@ struct StravaUploadPolicyTests {
         #expect(StravaUploadPolicy.shouldAutoUpload(
             modality: ftp, autoUploadEnabled: true, includeFTPTests: true))
     }
-
-    @Test
-    func onlyRouteRidesAreVirtual() {
-        #expect(StravaUploadPolicy.isVirtualRide(
-            .routeRide(routeID: nil, routeName: "Climb", totalElevationGainMeters: 100)))
-        #expect(!StravaUploadPolicy.isVirtualRide(.structured))
-        #expect(!StravaUploadPolicy.isVirtualRide(.freeRide))
-    }
 }

@@ -174,14 +174,15 @@ final class WorkoutPlayerViewModel {
 
     /// Target watts to drive the trainer to for the current interval. When the
     /// interval carries an explicit `targetWatts` (ramp test steps), that wins.
-    /// Otherwise the band midpoint of the interval's zone. Nil for warmup
-    /// intervals with no explicit target.
+    /// Otherwise the user's configured penetration into the interval's zone.
+    /// Nil for warmup intervals with no explicit target.
     var ergTargetWattsForCurrentInterval: Int? {
         if let explicit = currentInterval?.targetWatts { return explicit }
         guard let zone = currentInterval?.zone else { return nil }
-        let range = zone.wattRange(ftp: currentFTP)
-        let midpoint = (range.lowerBound + range.upperBound) / 2
-        return midpoint
+        return zone.ergTargetWatts(
+            ftp: currentFTP,
+            penetrationPercent: settings.ergZonePenetration(for: zone)
+        )
     }
     #endif
 
@@ -742,7 +743,7 @@ final class WorkoutPlayerViewModel {
     #if os(iOS)
     /// Drives the trainer for the current interval. Warmups park the trainer in
     /// Level mode at level 0 so the rider can spin up at their own pace; active
-    /// intervals snap to the zone-band midpoint (or explicit `targetWatts`) via
+    /// intervals snap to the configured zone penetration (or explicit `targetWatts`) via
     /// ERG. Called on initial start and on every interval transition.
     ///
     /// `previousIntervalWasWarmup` tells us we just crossed from a warmup into
@@ -816,7 +817,7 @@ final class WorkoutPlayerViewModel {
     }
 
     /// Re-enable ERG after a manual override. Called from the player's "Re-enable ERG"
-    /// button. Clears the sticky flag and snaps the trainer back to the current zone midpoint.
+    /// button. Clears the sticky flag and snaps the trainer back to the current zone target.
     func reEnableERGForCurrentInterval() {
         guard let controller = trainerController,
               let target = ergTargetWattsForCurrentInterval else { return }

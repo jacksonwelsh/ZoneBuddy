@@ -65,8 +65,7 @@ final class StravaService {
             format: activityFile.format,
             name: session.name,
             description: "Recorded with ZoneBuddy",
-            externalID: session.id.uuidString,
-            isVirtual: StravaUploadPolicy.isVirtualRide(session.modality)
+            externalID: session.id.uuidString
         )
 
         do {

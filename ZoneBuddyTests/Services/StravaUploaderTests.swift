@@ -20,14 +20,13 @@ struct StravaUploaderTests {
         )
     }
 
-    private func request(virtual: Bool = false) -> StravaUploadRequest {
+    private func request() -> StravaUploadRequest {
         StravaUploadRequest(
             fileData: Data("<tcx/>".utf8),
             format: .tcx,
             name: "Morning Ride",
             description: "Recorded with ZoneBuddy",
-            externalID: "abc-123",
-            isVirtual: virtual
+            externalID: "abc-123"
         )
     }
 
@@ -71,7 +70,7 @@ struct StravaUploaderTests {
     }
 
     @Test
-    func virtualRidesIssueSportTypePut() async throws {
+    func uploadsIssueVirtualRideSportTypePut() async throws {
         var sawVirtualPut = false
         StubURLProtocol.handler = { request in
             let url = request.url!.absoluteString
@@ -79,12 +78,16 @@ struct StravaUploaderTests {
                 return try StubURLProtocol.jsonResponse(for: request, ["id": 3, "activity_id": 888])
             }
             if request.httpMethod == "PUT", url.hasSuffix("/activities/888") {
-                sawVirtualPut = true
+                let body = try StubURLProtocol.bodyData(for: request)
+                let json = try #require(
+                    JSONSerialization.jsonObject(with: body) as? [String: String]
+                )
+                sawVirtualPut = json == ["sport_type": "VirtualRide"]
                 return try StubURLProtocol.jsonResponse(for: request, ["id": 888])
             }
             throw URLError(.unsupportedURL)
         }
-        let activityID = try await makeUploader().upload(request(virtual: true))
+        let activityID = try await makeUploader().upload(request())
         #expect(activityID == 888)
         #expect(sawVirtualPut)
     }
@@ -93,7 +96,9 @@ struct StravaUploaderTests {
     func fitUploadUsesFITDataTypeAndFilename() async throws {
         var body = ""
         StubURLProtocol.handler = { request in
-            body = String(decoding: request.httpBody ?? Data(), as: UTF8.self)
+            if request.httpMethod == "POST" {
+                body = String(decoding: try StubURLProtocol.bodyData(for: request), as: UTF8.self)
+            }
             return try StubURLProtocol.jsonResponse(for: request, ["id": 5, "activity_id": 999])
         }
         let fitRequest = StravaUploadRequest(
@@ -101,8 +106,7 @@ struct StravaUploaderTests {
             format: .fit,
             name: "Power Zones",
             description: nil,
-            externalID: "fit-123",
-            isVirtual: false
+            externalID: "fit-123"
         )
 
         _ = try await makeUploader().upload(fitRequest)

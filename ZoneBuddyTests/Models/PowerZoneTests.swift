@@ -81,6 +81,24 @@ struct PowerZoneTests {
     }
 
     @Test
+    func ergTargetUsesPercentageThroughZoneAndRoundsToWatts() {
+        let zone = PowerZone.zone2
+
+        #expect(zone.ergTargetWatts(ftp: 200, penetrationPercent: 0) == 111)
+        #expect(zone.ergTargetWatts(ftp: 200, penetrationPercent: 25) == 121)
+        #expect(zone.ergTargetWatts(ftp: 200, penetrationPercent: 50) == 131)
+        #expect(zone.ergTargetWatts(ftp: 200, penetrationPercent: 100) == 150)
+    }
+
+    @Test
+    func ergTargetClampsPenetrationToZoneBounds() {
+        let zone = PowerZone.zone4
+
+        #expect(zone.ergTargetWatts(ftp: 200, penetrationPercent: -1) == 181)
+        #expect(zone.ergTargetWatts(ftp: 200, penetrationPercent: 101) == 210)
+    }
+
+    @Test
     func wattRangeAndZoneForPowerAgree() {
         // Regression: previously `wattRange` produced gaps between zones (e.g. 151W at FTP=200
         // fell into no displayed zone, but `zone(forPower:)` classified it as zone3). Verify

@@ -12,10 +12,12 @@ protocol SettingsReading: AnyObject {
     /// computation: gravity + rolling-resistance contributions are all
     /// proportional to this. Defaults to a typical adult value if unset.
     var riderWeightKg: Double { get }
+    func ergZonePenetration(for zone: PowerZone) -> Int
 }
 
 extension SettingsReading {
     var riderWeightKg: Double { 75.0 }
+    func ergZonePenetration(for zone: PowerZone) -> Int { 50 }
 }
 
 extension SettingsManager: SettingsReading {}

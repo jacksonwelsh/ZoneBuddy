@@ -17,6 +17,21 @@ struct WorkoutLayoutPreferences: Codable, Equatable {
     var showHeartRateBar: Bool = false // off by default on iPhone, shown on iPad
 }
 
+struct ERGZonePenetrations: Codable, Equatable {
+    static let defaultPercentage = 50
+
+    private var percentagesByZone: [Int: Int] = [:]
+
+    subscript(zone: PowerZone) -> Int {
+        get {
+            min(max(percentagesByZone[zone.rawValue] ?? Self.defaultPercentage, 0), 100)
+        }
+        set {
+            percentagesByZone[zone.rawValue] = min(max(newValue, 0), 100)
+        }
+    }
+}
+
 @Observable
 final class SettingsManager {
     static let shared = SettingsManager()
@@ -48,6 +63,15 @@ final class SettingsManager {
         didSet {
             store.set(Int64(functionalThresholdPower), forKey: Keys.functionalThresholdPower)
             store.synchronize()
+        }
+    }
+
+    var ergZonePenetrations: ERGZonePenetrations {
+        didSet {
+            if let data = try? JSONEncoder().encode(ergZonePenetrations) {
+                store.set(data, forKey: Keys.ergZonePenetrations)
+                store.synchronize()
+            }
         }
     }
 
@@ -120,6 +144,15 @@ final class SettingsManager {
         }
     }
 
+    /// Sticky capability flag used to expose ERG-specific settings after the
+    /// trainer disconnects. Once true, it remains true across devices via iCloud.
+    var hasConnectedERGCapableTrainer: Bool {
+        didSet {
+            store.set(hasConnectedERGCapableTrainer, forKey: Keys.hasConnectedERGCapableTrainer)
+            store.synchronize()
+        }
+    }
+
     /// When true, completed rides upload to Strava automatically. Off by
     /// default — a connected user must opt in; otherwise every ride is uploaded
     /// manually from the history detail screen.
@@ -154,6 +187,7 @@ final class SettingsManager {
         static let audioCuesEnabled = "audioCuesEnabled"
         static let playlistTakesOverMusic = "playlistTakesOverMusic"
         static let functionalThresholdPower = "functionalThresholdPower"
+        static let ergZonePenetrations = "ergZonePenetrations"
         static let maxHeartRate = "maxHeartRate"
         static let riderWeightKg = "riderWeightKg"
         static let layoutPreferences = "layoutPreferences"
@@ -161,6 +195,7 @@ final class SettingsManager {
         static let lastConnectedBikeName = "lastConnectedBikeName"
         static let promptForBikeBeforeWorkout = "promptForBikeBeforeWorkout"
         static let hasConnectedSimCapableTrainer = "hasConnectedSimCapableTrainer"
+        static let hasConnectedERGCapableTrainer = "hasConnectedERGCapableTrainer"
         static let stravaAutoUpload = "stravaAutoUpload"
         static let stravaAutoUploadIncludesFTPTests = "stravaAutoUploadIncludesFTPTests"
         static let hasCompletedOnboarding = "hasCompletedOnboarding"
@@ -189,6 +224,13 @@ final class SettingsManager {
         let savedFTP = Int(store.longLong(forKey: Keys.functionalThresholdPower))
         self.functionalThresholdPower = savedFTP == 0 ? 200 : savedFTP
 
+        if let penetrationData = store.data(forKey: Keys.ergZonePenetrations),
+           let penetrations = try? JSONDecoder().decode(ERGZonePenetrations.self, from: penetrationData) {
+            self.ergZonePenetrations = penetrations
+        } else {
+            self.ergZonePenetrations = ERGZonePenetrations()
+        }
+
         let savedMaxHR = Int(store.longLong(forKey: Keys.maxHeartRate))
         self.maxHeartRate = savedMaxHR == 0 ? 190 : savedMaxHR
 
@@ -212,6 +254,7 @@ final class SettingsManager {
         }
 
         self.hasConnectedSimCapableTrainer = store.bool(forKey: Keys.hasConnectedSimCapableTrainer)
+        self.hasConnectedERGCapableTrainer = store.bool(forKey: Keys.hasConnectedERGCapableTrainer)
 
         self.stravaAutoUpload = store.bool(forKey: Keys.stravaAutoUpload)
         self.stravaAutoUploadIncludesFTPTests = store.bool(forKey: Keys.stravaAutoUploadIncludesFTPTests)
@@ -244,6 +287,11 @@ final class SettingsManager {
             functionalThresholdPower = savedFTP
         }
 
+        if let penetrationData = store.data(forKey: Keys.ergZonePenetrations),
+           let penetrations = try? JSONDecoder().decode(ERGZonePenetrations.self, from: penetrationData) {
+            ergZonePenetrations = penetrations
+        }
+
         let savedMaxHR = Int(store.longLong(forKey: Keys.maxHeartRate))
         if savedMaxHR > 0 {
             maxHeartRate = savedMaxHR
@@ -272,6 +320,9 @@ final class SettingsManager {
         if store.bool(forKey: Keys.hasConnectedSimCapableTrainer) {
             hasConnectedSimCapableTrainer = true
         }
+        if store.bool(forKey: Keys.hasConnectedERGCapableTrainer) {
+            hasConnectedERGCapableTrainer = true
+        }
 
         if store.object(forKey: Keys.stravaAutoUpload) != nil {
             stravaAutoUpload = store.bool(forKey: Keys.stravaAutoUpload)
@@ -290,5 +341,9 @@ final class SettingsManager {
             hasCompletedOnboarding = false
             UserDefaults.standard.set(false, forKey: Keys.rerunOnboarding)
         }
+    }
+
+    func ergZonePenetration(for zone: PowerZone) -> Int {
+        ergZonePenetrations[zone]
     }
 }

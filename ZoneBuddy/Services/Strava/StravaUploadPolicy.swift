@@ -18,11 +18,4 @@ enum StravaUploadPolicy {
         if case .ftpTest = modality { return includeFTPTests }
         return true
     }
-
-    /// Route rides become Strava `VirtualRide`s (with a GPS map, Zwift-style).
-    /// Everything else is a trainer `Ride`.
-    static func isVirtualRide(_ modality: SessionModality) -> Bool {
-        if case .routeRide = modality { return true }
-        return false
-    }
 }

@@ -227,7 +227,7 @@ final class LiveBikeConnectionManager: BikeConnecting {
                 // A user-initiated connect resets the heal-attempt counter.
                 autoHealAttempts = 0
             }
-            observeSimCapability(on: bike)
+            observeTrainerCapabilities(on: bike)
             startDataStream(bike: bike)
 
             let settings = SettingsManager.shared
@@ -282,23 +282,28 @@ final class LiveBikeConnectionManager: BikeConnecting {
         }
     }
 
-    /// Watches the bike's capabilities publisher until we see Indoor Bike
-    /// Simulation support, then sets the sticky settings flag and tears the
-    /// subscription down. We never clear the flag — "previously owned a
-    /// sim-capable trainer" is the contract that gates Route Ride UI.
-    private func observeSimCapability(on bike: FTMSBike) {
+    /// Records trainer features that unlock capability-specific UI. These are
+    /// sticky so their settings remain available while the trainer is offline.
+    private func observeTrainerCapabilities(on bike: FTMSBike) {
         capabilitiesObserver?.cancel()
-        if SettingsManager.shared.hasConnectedSimCapableTrainer {
+        let settings = SettingsManager.shared
+        if settings.hasConnectedSimCapableTrainer && settings.hasConnectedERGCapableTrainer {
             capabilitiesObserver = nil
             return
         }
         capabilitiesObserver = bike.capabilitiesPublisher
             .compactMap { $0 }
-            .filter { $0.simulationParamsSupported }
-            .first()
-            .sink { [weak self] _ in
-                SettingsManager.shared.hasConnectedSimCapableTrainer = true
-                self?.capabilitiesObserver = nil
+            .sink { [weak self] capabilities in
+                if capabilities.simulationParamsSupported {
+                    settings.hasConnectedSimCapableTrainer = true
+                }
+                if capabilities.powerTargetSettingSupported {
+                    settings.hasConnectedERGCapableTrainer = true
+                }
+                if settings.hasConnectedSimCapableTrainer && settings.hasConnectedERGCapableTrainer {
+                    self?.capabilitiesObserver?.cancel()
+                    self?.capabilitiesObserver = nil
+                }
             }
     }
 

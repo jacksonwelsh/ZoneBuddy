@@ -87,6 +87,16 @@ struct SettingsView: View {
                     Text("Take an FTP test to measure your threshold power, or enter it manually above. Max HR is used for heart rate zone ranges (100–230 bpm).")
                 }
 
+                if showsERGSettings {
+                    Section("ERG") {
+                        NavigationLink {
+                            ERGZonePenetrationView(settings: settings)
+                        } label: {
+                            Label("Zone Penetration", systemImage: "scope")
+                        }
+                    }
+                }
+
                 Section {
                     HStack {
                         Label("Weight", systemImage: "scalemass.fill")
@@ -200,6 +210,11 @@ struct SettingsView: View {
         }
     }
 
+    private var showsERGSettings: Bool {
+        settings.hasConnectedERGCapableTrainer
+            || bikeManager.trainerController?.capabilities?.powerTargetSettingSupported == true
+    }
+
     private var syncButtonIcon: String {
         switch weightSyncStatus {
         case .synced:  return "checkmark.circle.fill"
@@ -221,6 +236,65 @@ struct SettingsView: View {
 
     private func formattedWeight(_ kg: Double) -> String {
         String(format: "%.1f", kg)
+    }
+}
+
+private struct ERGZonePenetrationView: View {
+    @Bindable var settings: SettingsManager
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(PowerZone.allCases) { zone in
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(zone.displayName)
+                                Text(zone.zoneName)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text("\(settings.ergZonePenetrations[zone])% · \(targetWatts(for: zone)) W")
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Slider(
+                            value: penetrationBinding(for: zone),
+                            in: 0...100,
+                            step: 1
+                        )
+                        .tint(zone.color)
+                        .accessibilityLabel("\(zone.displayName) penetration")
+                        .accessibilityValue(
+                            "\(settings.ergZonePenetrations[zone]) percent, \(targetWatts(for: zone)) watts"
+                        )
+                    }
+                    .padding(.vertical, 4)
+                }
+            } footer: {
+                Text("Choose where ERG targets each zone: 0% is the zone's lower limit and 100% is its upper limit. Wattages use your current FTP.")
+            }
+        }
+        .navigationTitle("Zone Penetration")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func penetrationBinding(for zone: PowerZone) -> Binding<Double> {
+        Binding(
+            get: { Double(settings.ergZonePenetrations[zone]) },
+            set: { newValue in
+                settings.ergZonePenetrations[zone] = Int(newValue.rounded())
+            }
+        )
+    }
+
+    private func targetWatts(for zone: PowerZone) -> Int {
+        zone.ergTargetWatts(
+            ftp: settings.functionalThresholdPower,
+            penetrationPercent: settings.ergZonePenetrations[zone]
+        )
     }
 }
 

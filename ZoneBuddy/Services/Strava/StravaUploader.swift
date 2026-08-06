@@ -16,8 +16,6 @@ struct StravaUploadRequest {
     /// Session UUID string. Sent as Strava's `external_id` so retries dedupe to
     /// the same activity instead of creating duplicates.
     let externalID: String
-    /// Route rides → `VirtualRide` with a map; others → trainer `Ride`.
-    let isVirtual: Bool
 }
 
 /// Uploads a finished ride file to Strava and returns the created activity id.
@@ -26,7 +24,7 @@ protocol StravaUploading {
 }
 
 /// Live uploader: `POST /uploads` (multipart) → poll `GET /uploads/{id}` until
-/// Strava finishes processing → for virtual rides, `PUT /activities/{id}` to set
+/// Strava finishes processing → `PUT /activities/{id}` to set
 /// `sport_type=VirtualRide`. Authorization tokens come from the injected
 /// `StravaTokenProviding`; the `URLSession` and poll cadence are injectable so
 /// the whole flow is testable against a stubbed `URLProtocol`.
@@ -61,11 +59,9 @@ final class StravaUploader: StravaUploading {
         case .pending(let uploadID):
             activityID = try await pollForActivity(uploadID: uploadID, token: token)
         }
-        if request.isVirtual {
-            // Best-effort: the activity already exists and is uploaded; failing
-            // to re-tag it shouldn't fail the whole upload.
-            try? await setSportType(activityID: activityID, sportType: "VirtualRide", token: token)
-        }
+        // Best-effort: the activity already exists and is uploaded; failing to
+        // re-tag it shouldn't fail the whole upload.
+        try? await setSportType(activityID: activityID, sportType: "VirtualRide", token: token)
         return activityID
     }
 

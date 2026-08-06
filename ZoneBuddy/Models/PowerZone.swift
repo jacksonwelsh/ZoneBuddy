@@ -84,6 +84,18 @@ enum PowerZone: Int, Codable, CaseIterable, Identifiable, Sendable {
         return lower...upper
     }
 
+    /// The ERG target at a given percentage through this zone's watt range.
+    /// Zero selects the lower bound, 100 selects the upper bound, and values
+    /// outside that range are clamped before the result is rounded to watts.
+    func ergTargetWatts(ftp: Int, penetrationPercent: Int) -> Int {
+        let range = wattRange(ftp: ftp)
+        let clampedPercent = min(max(penetrationPercent, 0), 100)
+        let fraction = Double(clampedPercent) / 100
+        let watts = Double(range.lowerBound)
+            + (Double(range.upperBound - range.lowerBound) * fraction)
+        return Int(watts.rounded())
+    }
+
     /// Human-readable watt range description, e.g. "165-200W".
     func rangeDescription(ftp: Int) -> String {
         let range = wattRange(ftp: ftp)

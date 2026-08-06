@@ -415,7 +415,7 @@ struct TrainerControlView: View {
 
     /// Binding for the segmented mode picker. The getter is derived state
     /// (`selectedMode`); the setter switches the trainer over: ERG snaps to the
-    /// current zone midpoint (via `reEnableERGForCurrentInterval` — falls back
+    /// current zone target (via `reEnableERGForCurrentInterval` — falls back
     /// to the last target or capability lower bound when no interval is
     /// active), Level engages `setResistanceLevel` at the current/last level.
     private var modeBinding: Binding<ControlMode> {

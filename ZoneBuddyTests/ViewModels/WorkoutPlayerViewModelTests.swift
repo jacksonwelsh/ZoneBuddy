@@ -502,7 +502,7 @@ struct WorkoutPlayerViewModelTests {
     // MARK: - ERG / Trainer Integration
 
     @Test
-    func startEnablesERGAtZoneMidpointWhenFirstIntervalIsNotWarmup() async {
+    func startEnablesERGAtDefaultZonePenetrationWhenFirstIntervalIsNotWarmup() async {
         var currentTime = Date(timeIntervalSince1970: 1000)
         let timer = MockTimerProvider()
         let bike = StubTrainerBikeManager()
@@ -511,7 +511,7 @@ struct WorkoutPlayerViewModelTests {
             timerProvider: timer,
             dateProvider: { currentTime },
             bikeManager: bike,
-            settings: FixedFTPSettings(ftp: 200)        // Z2 = 55–74% → 110–148W → mid ~ 129W
+            settings: FixedFTPSettings(ftp: 200)
         )
 
         vm.start()
@@ -520,8 +520,27 @@ struct WorkoutPlayerViewModelTests {
         let fake = bike.fakeTrainer
         #expect(fake.mode == .erg)
         let target = fake.currentTargetWatts ?? 0
-        // Midpoint of Z2 [110, 148] = 129. Allow a one-watt fudge for integer rounding.
-        #expect(abs(target - 129) <= 1)
+        // The default 50% penetration of Z2 [111, 150] rounds to 131W.
+        #expect(target == 131)
+    }
+
+    @Test
+    func startEnablesERGAtConfiguredPenetrationForCurrentZone() async {
+        let timer = MockTimerProvider()
+        let bike = StubTrainerBikeManager()
+        let settings = FixedFTPSettings(ftp: 200, zonePenetrations: [.zone2: 25])
+        let vm = WorkoutPlayerViewModel(
+            intervals: [Interval(zone: .zone2, duration: 30, sortOrder: 0)],
+            timerProvider: timer,
+            bikeManager: bike,
+            settings: settings
+        )
+
+        vm.start()
+        await wait()
+
+        // 25% through Z2 [111, 150] is 120.75W, rounded to 121W.
+        #expect(bike.fakeTrainer.currentTargetWatts == 121)
     }
 
     @Test
@@ -556,9 +575,9 @@ struct WorkoutPlayerViewModelTests {
         await wait()
 
         #expect(fake.mode == .erg)
-        // Z3 = 75–89% of 200 → 150–178 → mid ~ 164.
+        // Default 50% penetration through Z3 [151, 180] rounds to 166W.
         let target = fake.currentTargetWatts ?? 0
-        #expect(abs(target - 164) <= 1)
+        #expect(target == 166)
     }
 
     @Test
@@ -596,7 +615,7 @@ struct WorkoutPlayerViewModelTests {
 
         #expect(fake.mode == .erg)
         let target = fake.currentTargetWatts ?? 0
-        #expect(abs(target - 164) <= 1)
+        #expect(target == 166)
     }
 
     @Test
@@ -628,7 +647,7 @@ struct WorkoutPlayerViewModelTests {
         #expect(fake.ergUserOverridden == true)
         #expect(fake.currentTargetWatts == (initialTarget ?? 0) + 10)
 
-        // Cross interval boundary — controller should NOT receive a new midpoint target.
+        // Cross interval boundary — controller should NOT receive a new zone target.
         let afterOverride = fake.currentTargetWatts
         currentTime.addTimeInterval(5)
         timer.fire(at: currentTime)
@@ -836,7 +855,7 @@ struct WorkoutPlayerViewModelTests {
     }
 
     @Test
-    func reEnableERGClearsOverrideAndSnapsToCurrentZoneMidpoint() async {
+    func reEnableERGClearsOverrideAndSnapsToCurrentZonePenetration() async {
         var currentTime = Date(timeIntervalSince1970: 1000)
         let timer = MockTimerProvider()
         let bike = StubTrainerBikeManager()
@@ -861,7 +880,7 @@ struct WorkoutPlayerViewModelTests {
 
         #expect(bike.fakeTrainer.ergUserOverridden == false)
         let target = bike.fakeTrainer.currentTargetWatts ?? 0
-        #expect(abs(target - 164) <= 1) // Z3 midpoint at FTP 200
+        #expect(target == 166) // Default 50% through Z3 at FTP 200.
     }
 
     // MARK: - Route ride / HealthKit route helpers
@@ -1126,7 +1145,14 @@ private final class FixedFTPSettings: SettingsReading {
     var maxHeartRate: Int = 190
     var audioCuesEnabled: Bool = false
     var transitionWarningDuration: Int = 10
-    init(ftp: Int) {
+    private let zonePenetrations: [PowerZone: Int]
+
+    init(ftp: Int, zonePenetrations: [PowerZone: Int] = [:]) {
         self.functionalThresholdPower = ftp
+        self.zonePenetrations = zonePenetrations
+    }
+
+    func ergZonePenetration(for zone: PowerZone) -> Int {
+        zonePenetrations[zone] ?? 50
     }
 }

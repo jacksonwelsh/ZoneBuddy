@@ -33,6 +33,7 @@ final class FakeBikeConnectionManager: BikeConnecting {
         // `LiveBikeConnectionManager` does so Route Ride UI un-hides in
         // simulator builds.
         SettingsManager.shared.hasConnectedSimCapableTrainer = true
+        SettingsManager.shared.hasConnectedERGCapableTrainer = true
     }
 
     func startScanning() {}

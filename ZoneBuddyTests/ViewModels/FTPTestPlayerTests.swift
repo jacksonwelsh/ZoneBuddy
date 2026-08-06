@@ -12,7 +12,7 @@ struct FTPTestPlayerTests {
     // MARK: - ergTargetWattsForCurrentInterval
 
     @Test
-    func ergTargetPrefersExplicitTargetWattsOverZoneMidpoint() {
+    func ergTargetPrefersExplicitTargetWattsOverZonePenetration() {
         let intervals = [Interval(zone: .zone3, duration: 60, sortOrder: 0, targetWatts: 275)]
         let timer = MockTimerProvider()
         let vm = WorkoutPlayerViewModel(
@@ -21,12 +21,12 @@ struct FTPTestPlayerTests {
             settings: FixedFTPSettings(ftp: 200)
         )
 
-        // Explicit target wins (275), not the Z3 midpoint at FTP 200 (~164).
+        // Explicit target wins (275), not the configured Z3 target.
         #expect(vm.ergTargetWattsForCurrentInterval == 275)
     }
 
     @Test
-    func ergTargetFallsBackToZoneMidpointWhenNoExplicitTarget() {
+    func ergTargetFallsBackToDefaultZonePenetrationWhenNoExplicitTarget() {
         let intervals = [Interval(zone: .zone3, duration: 60, sortOrder: 0)]
         let timer = MockTimerProvider()
         let vm = WorkoutPlayerViewModel(
@@ -35,8 +35,8 @@ struct FTPTestPlayerTests {
             settings: FixedFTPSettings(ftp: 200)
         )
 
-        let midpoint = vm.ergTargetWattsForCurrentInterval ?? 0
-        #expect(abs(midpoint - 164) <= 1) // Z3 midpoint at FTP 200
+        let target = vm.ergTargetWattsForCurrentInterval ?? 0
+        #expect(target == 166) // Default 50% through Z3 [151, 180].
     }
 
     @Test

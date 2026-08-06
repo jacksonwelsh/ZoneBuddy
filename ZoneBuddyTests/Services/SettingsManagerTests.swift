@@ -46,4 +46,30 @@ struct SettingsManagerTests {
         #expect(decoded.showSpeed == false)
         #expect(decoded.showMusicControls == false)
     }
+
+    @Test func ergZonePenetrationsDefaultToFiftyPercentIndependently() {
+        var penetrations = ERGZonePenetrations()
+
+        #expect(PowerZone.allCases.allSatisfy { penetrations[$0] == 50 })
+
+        penetrations[.zone2] = 25
+        penetrations[.zone6] = 80
+
+        #expect(penetrations[.zone2] == 25)
+        #expect(penetrations[.zone3] == 50)
+        #expect(penetrations[.zone6] == 80)
+    }
+
+    @Test func ergZonePenetrationsClampAndRoundTrip() throws {
+        var penetrations = ERGZonePenetrations()
+        penetrations[.zone1] = -10
+        penetrations[.zone7] = 120
+
+        let data = try JSONEncoder().encode(penetrations)
+        let decoded = try JSONDecoder().decode(ERGZonePenetrations.self, from: data)
+
+        #expect(decoded[.zone1] == 0)
+        #expect(decoded[.zone2] == 50)
+        #expect(decoded[.zone7] == 100)
+    }
 }

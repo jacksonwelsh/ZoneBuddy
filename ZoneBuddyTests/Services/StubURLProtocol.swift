@@ -41,6 +41,30 @@ final class StubURLProtocol: URLProtocol {
         return URLSession(configuration: config)
     }
 
+    /// URLSession may convert `httpBody` into a stream before a URLProtocol
+    /// sees the request. Read either representation so tests can assert the
+    /// actual bytes sent over the wire.
+    static func bodyData(for request: URLRequest) throws -> Data {
+        if let body = request.httpBody { return body }
+        guard let stream = request.httpBodyStream else { return Data() }
+
+        stream.open()
+        defer { stream.close() }
+
+        var data = Data()
+        let bufferSize = 4_096
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+        defer { buffer.deallocate() }
+
+        while stream.hasBytesAvailable {
+            let count = stream.read(buffer, maxLength: bufferSize)
+            if count < 0 { throw stream.streamError ?? URLError(.cannotDecodeRawData) }
+            if count == 0 { break }
+            data.append(buffer, count: count)
+        }
+        return data
+    }
+
     /// Convenience: a 200 response carrying a JSON object body.
     static func jsonResponse(for request: URLRequest, _ object: [String: Any], status: Int = 200) throws -> (HTTPURLResponse, Data) {
         let data = try JSONSerialization.data(withJSONObject: object)

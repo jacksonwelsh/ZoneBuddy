@@ -7,7 +7,7 @@ final class Interval {
     var duration: Int = 60
     var sortOrder: Int = 0
     /// Explicit ERG target in watts for this interval. When set, the workout
-    /// engine drives the trainer to this value instead of the zone-band midpoint.
+    /// engine drives the trainer to this value instead of the zone penetration target.
     /// Currently used by the ramp FTP test to step targets up each minute.
     var targetWatts: Int?
     var workout: Workout?
