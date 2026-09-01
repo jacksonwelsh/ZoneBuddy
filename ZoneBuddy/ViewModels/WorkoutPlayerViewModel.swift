@@ -929,6 +929,7 @@ final class WorkoutPlayerViewModel {
                 let remaining = goalSeconds - Int(totalElapsed)
                 secondsRemaining = max(0, remaining)
                 if Int(totalElapsed) >= goalSeconds {
+                    totalElapsedSeconds = goalSeconds
                     isFinished = true
                     isRunning = false
                     secondsRemaining = 0
@@ -961,6 +962,7 @@ final class WorkoutPlayerViewModel {
             timeMarker = intervalEnd
         }
 
+        totalElapsedSeconds = Int(timeMarker)
         isFinished = true
         isRunning = false
         secondsRemaining = 0

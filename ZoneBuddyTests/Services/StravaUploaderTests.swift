@@ -70,26 +70,19 @@ struct StravaUploaderTests {
     }
 
     @Test
-    func uploadsIssueVirtualRideSportTypePut() async throws {
-        var sawVirtualPut = false
+    func tcxUploadIncludesVirtualRideSportType() async throws {
+        var body = ""
         StubURLProtocol.handler = { request in
-            let url = request.url!.absoluteString
-            if request.httpMethod == "POST", url.hasSuffix("/uploads") {
-                return try StubURLProtocol.jsonResponse(for: request, ["id": 3, "activity_id": 888])
+            if request.httpMethod == "POST" {
+                body = String(decoding: try StubURLProtocol.bodyData(for: request), as: UTF8.self)
             }
-            if request.httpMethod == "PUT", url.hasSuffix("/activities/888") {
-                let body = try StubURLProtocol.bodyData(for: request)
-                let json = try #require(
-                    JSONSerialization.jsonObject(with: body) as? [String: String]
-                )
-                sawVirtualPut = json == ["sport_type": "VirtualRide"]
-                return try StubURLProtocol.jsonResponse(for: request, ["id": 888])
-            }
-            throw URLError(.unsupportedURL)
+            return try StubURLProtocol.jsonResponse(for: request, ["id": 3, "activity_id": 888])
         }
+
         let activityID = try await makeUploader().upload(request())
+
         #expect(activityID == 888)
-        #expect(sawVirtualPut)
+        #expect(body.contains("name=\"sport_type\"\r\n\r\nVirtualRide\r\n"))
     }
 
     @Test
@@ -112,6 +105,7 @@ struct StravaUploaderTests {
         _ = try await makeUploader().upload(fitRequest)
 
         #expect(body.contains("name=\"data_type\"\r\n\r\nfit\r\n"))
+        #expect(body.contains("name=\"sport_type\"\r\n\r\nVirtualRide\r\n"))
         #expect(body.contains("filename=\"fit-123.fit\""))
     }
 

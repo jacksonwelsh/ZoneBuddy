@@ -23,11 +23,11 @@ protocol StravaUploading {
     func upload(_ request: StravaUploadRequest) async throws -> Int
 }
 
-/// Live uploader: `POST /uploads` (multipart) → poll `GET /uploads/{id}` until
-/// Strava finishes processing → `PUT /activities/{id}` to set
-/// `sport_type=VirtualRide`. Authorization tokens come from the injected
-/// `StravaTokenProviding`; the `URLSession` and poll cadence are injectable so
-/// the whole flow is testable against a stubbed `URLProtocol`.
+/// Live uploader: `POST /uploads` (multipart) with `sport_type=VirtualRide` →
+/// poll `GET /uploads/{id}` until Strava finishes processing. Authorization
+/// tokens come from the injected `StravaTokenProviding`; the `URLSession` and
+/// poll cadence are injectable so the whole flow is testable against a stubbed
+/// `URLProtocol`.
 final class StravaUploader: StravaUploading {
     private let tokenProvider: StravaTokenProviding
     private let session: URLSession
@@ -51,18 +51,13 @@ final class StravaUploader: StravaUploading {
 
     func upload(_ request: StravaUploadRequest) async throws -> Int {
         let token = try await tokenProvider.validAccessToken()
-        let activityID: Int
         switch try await postUpload(request, token: token) {
         case .resolved(let id):
             // Strava resolved (or deduped) on the first response.
-            activityID = id
+            return id
         case .pending(let uploadID):
-            activityID = try await pollForActivity(uploadID: uploadID, token: token)
+            return try await pollForActivity(uploadID: uploadID, token: token)
         }
-        // Best-effort: the activity already exists and is uploaded; failing to
-        // re-tag it shouldn't fail the whole upload.
-        try? await setSportType(activityID: activityID, sportType: "VirtualRide", token: token)
-        return activityID
     }
 
     /// Outcome of the initial upload POST: either Strava already resolved the
@@ -94,6 +89,7 @@ final class StravaUploader: StravaUploading {
             "external_id": request.externalID,
             // All ZoneBuddy rides come from an indoor smart trainer.
             "trainer": "1",
+            "sport_type": "VirtualRide",
         ]
         if let description = request.description {
             fields["description"] = description
@@ -177,21 +173,6 @@ final class StravaUploader: StravaUploading {
         }
         guard !digits.isEmpty else { return nil }
         return Int(String(digits.reversed()))
-    }
-
-    // MARK: - PUT /activities/{id}
-
-    private func setSportType(activityID: Int, sportType: String, token: String) async throws {
-        var request = URLRequest(url: apiBaseURL.appendingPathComponent("activities/\(activityID)"))
-        request.httpMethod = "PUT"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: ["sport_type": sportType])
-
-        let (_, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw StravaError.invalidResponse
-        }
     }
 
     // MARK: - Multipart

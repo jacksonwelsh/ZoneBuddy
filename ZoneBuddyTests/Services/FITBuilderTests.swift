@@ -89,7 +89,7 @@ struct FITBuilderTests {
     }
 
     @Test
-    func preservesPauseEventsAndExcludesPausedTimeFromTimerDuration() throws {
+    func compressesPauseGapsSoElapsedAndTimerDurationMatch() throws {
         let secondStart = start.addingTimeInterval(12)
         let samples = [bike(0), bike(1), bike(2), bike(12), bike(13), bike(14)]
         let data = try FITBuilder.makeFIT(
@@ -106,9 +106,96 @@ struct FITBuilderTests {
         )
 
         let messages = try decode(data)
-        #expect(messages.eventMesgs.map { $0.getEventType() } == [.start, .stopAll, .start, .stopAll])
+        #expect(messages.eventMesgs.map { $0.getEventType() } == [.start, .stopAll])
         #expect(messages.sessionMesgs[0].getTotalTimerTime() == 4)
-        #expect(messages.sessionMesgs[0].getTotalElapsedTime() == 14)
+        #expect(messages.sessionMesgs[0].getTotalElapsedTime() == 4)
+        #expect(messages.lapMesgs[0].getTotalElapsedTime() == 4)
+        let recordTimestamps = messages.recordMesgs.compactMap { $0.getTimestamp()?.date }
+        #expect(recordTimestamps.last?.timeIntervalSince(recordTimestamps.first!) == 4)
+    }
+
+    @Test
+    func addsRecordsAtTimerBoundariesWhenSensorSamplesStartLateAndEndEarly() throws {
+        let data = try FITBuilder.makeFIT(
+            samples: [bike(1, power: 150), bike(2, power: 200), bike(3, power: 250)],
+            heartRateSamples: [],
+            timerSegments: [RideTimerSegment(start: start, end: start.addingTimeInterval(4))],
+            intervals: [.init(zone: .zone2, duration: 4)],
+            totalDuration: 4,
+            totalCalories: nil,
+            serialNumber: 11
+        )
+
+        let messages = try decode(data)
+        let timestamps = messages.recordMesgs.compactMap { $0.getTimestamp()?.date }
+        #expect(timestamps.count == 5)
+        #expect(timestamps.first == start)
+        #expect(timestamps.last == start.addingTimeInterval(4))
+        #expect(timestamps.last?.timeIntervalSince(timestamps.first!) == 4)
+        #expect(messages.recordMesgs.map { $0.getPower() } == [150, 150, 200, 250, 250])
+    }
+
+    @Test
+    func carriesAsynchronousTrainerTelemetryAcrossHeartRateOnlySeconds() throws {
+        let data = try FITBuilder.makeFIT(
+            samples: [
+                bike(0.8, power: 150),
+                bike(1.8, power: 160),
+                bike(3.2, power: 180),
+                bike(4, power: 190),
+            ],
+            heartRateSamples: (0...4).map {
+                RideHeartRateSample(timestamp: start.addingTimeInterval(TimeInterval($0)), beatsPerMinute: 140 + $0)
+            },
+            timerSegments: [RideTimerSegment(start: start, end: start.addingTimeInterval(4))],
+            intervals: [.init(zone: .zone2, duration: 4)],
+            totalDuration: 4,
+            totalCalories: nil,
+            serialNumber: 12
+        )
+
+        let messages = try decode(data)
+        #expect(messages.recordMesgs.map { $0.getPower() } == [150, 160, 160, 180, 190])
+        #expect(messages.recordMesgs.map { $0.getCadence() } == [90, 90, 90, 90, 90])
+        #expect(messages.recordMesgs.map { $0.getHeartRate() } == [140, 141, 142, 143, 144])
+    }
+
+    @Test
+    func leavesLongTrainerOutagesWithoutPower() throws {
+        let data = try FITBuilder.makeFIT(
+            samples: [bike(0, power: 150), bike(4, power: 200)],
+            heartRateSamples: (0...4).map {
+                RideHeartRateSample(timestamp: start.addingTimeInterval(TimeInterval($0)), beatsPerMinute: 140)
+            },
+            timerSegments: [RideTimerSegment(start: start, end: start.addingTimeInterval(4))],
+            intervals: [.init(zone: .zone2, duration: 4)],
+            totalDuration: 4,
+            totalCalories: nil,
+            serialNumber: 13
+        )
+
+        let messages = try decode(data)
+        #expect(messages.recordMesgs.map { $0.getPower() } == [150, 150, nil, nil, 200])
+    }
+
+    @Test
+    func doesNotCarryTrainerTelemetryAcrossPauseBoundaries() throws {
+        let secondStart = start.addingTimeInterval(12)
+        let data = try FITBuilder.makeFIT(
+            samples: [bike(0, power: 150), bike(13, power: 200)],
+            heartRateSamples: [RideHeartRateSample(timestamp: secondStart, beatsPerMinute: 145)],
+            timerSegments: [
+                RideTimerSegment(start: start, end: start.addingTimeInterval(1)),
+                RideTimerSegment(start: secondStart, end: secondStart.addingTimeInterval(1)),
+            ],
+            intervals: [.init(zone: .zone2, duration: 2)],
+            totalDuration: 2,
+            totalCalories: nil,
+            serialNumber: 14
+        )
+
+        let messages = try decode(data)
+        #expect(messages.recordMesgs.map { $0.getPower() } == [150, nil, 200])
     }
 
     @Test

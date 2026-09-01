@@ -6,6 +6,11 @@ import FITSwiftSDK
 /// events retain pause/resume boundaries, and each prescribed interval becomes
 /// a lap for Strava's lap analysis.
 enum FITBuilder {
+    /// FTMS and heart-rate streams do not tick in lockstep. Reuse the most
+    /// recent trainer packet for one missing FIT second, but leave longer
+    /// outages empty so an actual disconnect is not hidden.
+    private static let maxTrainerSampleAge: TimeInterval = 1.5
+
     struct WorkoutInterval: Equatable {
         let zone: PowerZone?
         let duration: Int
@@ -35,12 +40,17 @@ enum FITBuilder {
             totalDuration: totalDuration
         )
         let startDate = segments.first!.start
-        let endDate = segments.last!.end
         let timerSeconds = max(1, totalDuration)
+        let endDate = startDate.addingTimeInterval(Double(timerSeconds))
 
-        let records = makeRecords(
-            samples: samples,
-            heartRates: heartRateSamples,
+        let records = addingTimerBoundaryRecords(
+            to: makeRecords(
+                samples: samples,
+                heartRates: heartRateSamples,
+                segments: segments
+            ).filter { $0.activeOffset <= Double(timerSeconds) },
+            startDate: startDate,
+            duration: Double(timerSeconds),
             segments: segments
         )
 
@@ -64,28 +74,29 @@ enum FITBuilder {
         encoder.write(mesg: fileID)
         encoder.write(mesg: device)
 
-        // Timer events and records are emitted in timestamp order. Start sorts
-        // before a record at the same second; stop sorts after it.
+        // A structured indoor ride uses the workout timer as its canonical
+        // clock. Compress pause gaps so Strava's elapsed time is the time the
+        // rider actually spent in the workout, while retaining every active
+        // sensor record and its position within the workout.
         var timeline: [(date: Date, order: Int, message: Mesg)] = []
-        for segment in segments {
-            let start = EventMesg()
-            try start.setTimestamp(DateTime(date: segment.start))
-            try start.setEvent(.timer)
-            try start.setEventType(.start)
-            try start.setTimerTrigger(.manual)
-            timeline.append((segment.start, 0, start))
+        let start = EventMesg()
+        try start.setTimestamp(DateTime(date: startDate))
+        try start.setEvent(.timer)
+        try start.setEventType(.start)
+        try start.setTimerTrigger(.manual)
+        timeline.append((startDate, 0, start))
 
-            let stop = EventMesg()
-            try stop.setTimestamp(DateTime(date: segment.end))
-            try stop.setEvent(.timer)
-            try stop.setEventType(.stopAll)
-            try stop.setTimerTrigger(.manual)
-            timeline.append((segment.end, 2, stop))
-        }
+        let stop = EventMesg()
+        try stop.setTimestamp(DateTime(date: endDate))
+        try stop.setEvent(.timer)
+        try stop.setEventType(.stopAll)
+        try stop.setTimerTrigger(.manual)
+        timeline.append((endDate, 2, stop))
 
         for value in records {
+            let recordDate = startDate.addingTimeInterval(value.activeOffset)
             let record = RecordMesg()
-            try record.setTimestamp(DateTime(date: value.timestamp))
+            try record.setTimestamp(DateTime(date: recordDate))
             try record.setDistance(value.distanceMeters)
             if let speed = value.sample?.speed, speed >= 0 {
                 try record.setEnhancedSpeed(speed / 3.6)
@@ -99,7 +110,7 @@ enum FITBuilder {
             if let power = value.sample?.power, power >= 0 {
                 try record.setPower(UInt16(clamping: power))
             }
-            timeline.append((value.timestamp, 1, record))
+            timeline.append((recordDate, 1, record))
         }
 
         timeline.sort {
@@ -110,8 +121,8 @@ enum FITBuilder {
 
         let lapRanges = makeLapRanges(intervals: intervals, totalDuration: timerSeconds)
         for (index, range) in lapRanges.enumerated() {
-            let lapStart = date(atActiveOffset: range.lowerBound, in: segments)
-            let lapEnd = date(atActiveOffset: range.upperBound, in: segments)
+            let lapStart = startDate.addingTimeInterval(range.lowerBound)
+            let lapEnd = startDate.addingTimeInterval(range.upperBound)
             let lapRecords = records.filter {
                 $0.activeOffset >= range.lowerBound &&
                 $0.activeOffset <= range.upperBound
@@ -121,7 +132,7 @@ enum FITBuilder {
             try lap.setStartTime(DateTime(date: lapStart))
             try lap.setTimestamp(DateTime(date: lapEnd))
             try lap.setTotalTimerTime(range.upperBound - range.lowerBound)
-            try lap.setTotalElapsedTime(max(0, lapEnd.timeIntervalSince(lapStart)))
+            try lap.setTotalElapsedTime(range.upperBound - range.lowerBound)
             try lap.setTotalDistance(
                 distance(at: range.upperBound, in: records) - distance(at: range.lowerBound, in: records)
             )
@@ -142,7 +153,7 @@ enum FITBuilder {
         try session.setStartTime(DateTime(date: startDate))
         try session.setTimestamp(DateTime(date: endDate))
         try session.setTotalTimerTime(Double(timerSeconds))
-        try session.setTotalElapsedTime(max(Double(timerSeconds), endDate.timeIntervalSince(startDate)))
+        try session.setTotalElapsedTime(Double(timerSeconds))
         try session.setTotalDistance(records.last?.distanceMeters ?? 0)
         try session.setSport(.cycling)
         try session.setSubSport(.indoorCycling)
@@ -199,18 +210,29 @@ enum FITBuilder {
         let seconds = Set(bikes.keys).union(hrs.keys).sorted()
         var distance = 0.0
         var previousBike: BikeDataSample?
+        var latestBike: BikeDataSample?
         var result: [RecordValue] = []
         for second in seconds {
             let timestamp = Date(timeIntervalSince1970: TimeInterval(second))
             guard let activeOffset = activeOffset(for: timestamp, in: segments) else { continue }
-            let bike = bikes[second]
-            if let bike, let previous = previousBike,
-               areInSameSegment(previous.timestamp, bike.timestamp, segments: segments),
-               let speed = bike.speed {
-                let dt = bike.timestamp.timeIntervalSince(previous.timestamp)
+            let currentBike = bikes[second]
+            if let currentBike { latestBike = currentBike }
+            let bike = currentBike ?? latestBike.flatMap { latest in
+                let age = timestamp.timeIntervalSince(latest.timestamp)
+                guard age >= 0,
+                      age <= maxTrainerSampleAge,
+                      areInSameSegment(latest.timestamp, timestamp, segments: segments) else {
+                    return nil
+                }
+                return latest
+            }
+            if let currentBike, let previous = previousBike,
+               areInSameSegment(previous.timestamp, currentBike.timestamp, segments: segments),
+               let speed = currentBike.speed {
+                let dt = currentBike.timestamp.timeIntervalSince(previous.timestamp)
                 if dt > 0 { distance += max(0, speed) / 3.6 * dt }
             }
-            if let bike { previousBike = bike }
+            if let currentBike { previousBike = currentBike }
             result.append(RecordValue(
                 timestamp: timestamp,
                 sample: bike,
@@ -231,6 +253,42 @@ enum FITBuilder {
             accumulated += segment.duration
         }
         return nil
+    }
+
+    private static func addingTimerBoundaryRecords(
+        to records: [RecordValue],
+        startDate: Date,
+        duration: TimeInterval,
+        segments: [RideTimerSegment]
+    ) -> [RecordValue] {
+        guard let first = records.first, let last = records.last else { return records }
+
+        var result = records
+        let startTimestamp = DateTime(date: startDate).timestamp
+        let firstTimestamp = DateTime(date: startDate.addingTimeInterval(first.activeOffset)).timestamp
+        if firstTimestamp > startTimestamp {
+            result.insert(RecordValue(
+                timestamp: date(atActiveOffset: 0, in: segments),
+                sample: first.sample,
+                heartRate: first.heartRate,
+                distanceMeters: first.distanceMeters,
+                activeOffset: 0
+            ), at: 0)
+        }
+
+        let endTimestamp = DateTime(date: startDate.addingTimeInterval(duration)).timestamp
+        let lastTimestamp = DateTime(date: startDate.addingTimeInterval(last.activeOffset)).timestamp
+        if lastTimestamp < endTimestamp {
+            result.append(RecordValue(
+                timestamp: date(atActiveOffset: duration, in: segments),
+                sample: last.sample,
+                heartRate: last.heartRate,
+                distanceMeters: last.distanceMeters,
+                activeOffset: duration
+            ))
+        }
+
+        return result
     }
 
     private static func date(atActiveOffset offset: TimeInterval, in segments: [RideTimerSegment]) -> Date {

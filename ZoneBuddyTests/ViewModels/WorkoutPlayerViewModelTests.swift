@@ -207,6 +207,32 @@ struct WorkoutPlayerViewModelTests {
     }
 
     @Test
+    func delayedCompletionTickClampsStructuredWorkoutToScheduledDuration() async {
+        var currentTime = Date(timeIntervalSince1970: 1000)
+        let timer = MockTimerProvider()
+        let persister = CountingSessionPersister()
+        let healthKit = MockHealthKitWorkoutRecorder()
+        let vm = WorkoutPlayerViewModel(
+            intervals: makeIntervals(),
+            timerProvider: timer,
+            dateProvider: { currentTime },
+            healthKitManager: healthKit,
+            sessionPersister: persister
+        )
+
+        vm.start()
+        await wait()
+
+        currentTime.addTimeInterval(23)
+        timer.fire(at: currentTime)
+        await wait()
+
+        #expect(vm.isFinished == true)
+        #expect(vm.totalElapsedSeconds == 18)
+        #expect(persister.lastSession?.totalDuration == 18)
+    }
+
+    @Test
     func pauseAndResume() async {
         var currentTime = Date(timeIntervalSince1970: 1000)
         let timer = MockTimerProvider()

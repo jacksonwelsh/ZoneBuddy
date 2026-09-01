@@ -249,6 +249,9 @@ struct WatchWorkoutPlayerView: View {
             viewModel.resume()
             isHandlingRemoteAction = false
         }
+        // Keep the system back button from bypassing the end-workout confirmation.
+        // The in-workout X button is the only local exit path while the ride is active.
+        .navigationBarBackButtonHidden(!viewModel.isFinished)
     }
 
     // MARK: - Active Zone Page
@@ -474,7 +477,11 @@ struct WatchWorkoutPlayerView: View {
             }
             .padding()
         }
-        .confirmationDialog("End Workout?", isPresented: $showExitConfirm) {
+        .confirmationDialog(
+            "End Workout?",
+            isPresented: $showExitConfirm,
+            titleVisibility: .visible
+        ) {
             Button("End Workout", role: .destructive) {
                 viewModel.pause()
                 viewModel.endWorkout()
