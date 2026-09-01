@@ -41,6 +41,15 @@ enum StravaUploadState: String, Codable, CaseIterable {
     case failed
 }
 
+/// Cyclone has a separate lifecycle from Strava. A successful export creates a
+/// private draft; publishing remains an explicit action in the Cyclone app.
+enum CycloneExportState: String, Codable, CaseIterable {
+    case notExported
+    case exporting
+    case exported
+    case failed
+}
+
 @Model
 final class WorkoutSession {
     var id: UUID = UUID()
@@ -129,6 +138,33 @@ final class WorkoutSession {
     /// synthesize a coarse TCX (a non-zero duration). Only a zero-duration row
     /// with no stored FIT/TCX file is genuinely unuploadable.
     var canUploadToStrava: Bool { stravaFITData != nil || stravaTCXData != nil || totalDuration > 0 }
+
+    // MARK: - Cyclone
+
+    /// Raw state keeps this CloudKit/SwiftData addition forward-compatible and
+    /// gives sessions created before Cyclone a safe default.
+    private var cycloneExportStateRaw: String = CycloneExportState.notExported.rawValue
+
+    /// Immutable Cyclone activity UUID returned by an idempotent draft import.
+    var cycloneActivityID: UUID?
+
+    /// User-facing failure from only the Cyclone path. Strava state is never
+    /// read or mutated by a Cyclone export.
+    var cycloneExportError: String?
+
+    /// Zlib-compressed normalized JSON captured while live streams still
+    /// exist. External storage keeps the CloudKit model row small.
+    @Attribute(.externalStorage)
+    var cycloneExportData: Data?
+
+    var cycloneExportState: CycloneExportState {
+        get { CycloneExportState(rawValue: cycloneExportStateRaw) ?? .notExported }
+        set { cycloneExportStateRaw = newValue.rawValue }
+    }
+
+    var canExportToCyclone: Bool {
+        cycloneExportData != nil || stravaFITData != nil || stravaTCXData != nil || totalDuration > 0
+    }
 
     // MARK: - Modality
 

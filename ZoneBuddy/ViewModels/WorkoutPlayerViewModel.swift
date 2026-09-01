@@ -1304,6 +1304,9 @@ final class WorkoutPlayerViewModel {
 
         let endDate = dateProvider()
         var metadata: [String: Any] = [:]
+        if let savedSession {
+            metadata["ZoneBuddySessionID"] = savedSession.id.uuidString
+        }
         if totalOutputKJ > 0 {
             metadata["TotalOutputKJ"] = totalOutputKJ
         }

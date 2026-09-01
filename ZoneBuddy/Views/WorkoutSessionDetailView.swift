@@ -61,6 +61,7 @@ struct WorkoutSessionDetailView: View {
                     powerZoneSection
                 }
                 hrZoneSection
+                CycloneExportRow(session: session)
                 StravaUploadRow(session: session)
 
             }

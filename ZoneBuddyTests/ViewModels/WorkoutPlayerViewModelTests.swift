@@ -197,6 +197,7 @@ struct WorkoutPlayerViewModelTests {
 
         #expect(vm.isFinished == true)
         #expect(persister.saveCount == 1)
+        #expect((healthKit.lastMetadata["ZoneBuddySessionID"] as? String) == persister.lastSession?.id.uuidString)
 
         // Simulate the user tapping "Done" on the completion screen — this must NOT
         // persist a second session or the workout shows up twice in history.

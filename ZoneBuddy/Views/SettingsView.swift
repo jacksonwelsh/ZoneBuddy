@@ -156,6 +156,7 @@ struct SettingsView: View {
                 }
 
                 StravaSettingsSection()
+                CycloneSettingsSection()
 
                 Section("Workout Display") {
                     NavigationLink {
