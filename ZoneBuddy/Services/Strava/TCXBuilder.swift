@@ -20,50 +20,66 @@ enum TCXBuilder {
     /// Build a TCX document for a ride.
     ///
     /// - Parameters:
-    ///   - samples: Per-tick bike telemetry (≈1 Hz). Defines the trackpoint
-    ///     timeline; an empty array yields a document with no trackpoints.
+    ///   - samples: Per-tick bike telemetry (≈1 Hz).
+    ///   - heartRateSamples: Independent Watch/BLE observations, preferred over
+    ///     bike HR in the same second. Also retained when no bike is connected.
     ///   - locations: Route GPS fixes, ascending by time. Empty for indoor rides
     ///     — without them no `<Position>` is emitted and Strava shows no map.
     ///   - totalCalories: Optional lap-level calorie total.
     /// - Returns: UTF-8 encoded TCX XML.
     static func makeTCX(
         samples: [BikeDataSample],
+        heartRateSamples: [RideHeartRateSample] = [],
         locations: [CLLocation],
         totalCalories: Int? = nil
     ) -> Data {
         let sorted = samples.sorted { $0.timestamp < $1.timestamp }
         let sortedLocations = locations.sorted { $0.timestamp < $1.timestamp }
+        var heartRates: [Int: RideHeartRateSample] = [:]
+        for observation in heartRateSamples.sorted(by: { $0.timestamp < $1.timestamp })
+            where observation.beatsPerMinute > 0 {
+            heartRates[Int(observation.timestamp.timeIntervalSince1970)] = observation
+        }
+        let bikeSeconds = Set(sorted.map { Int($0.timestamp.timeIntervalSince1970) })
+        var timeline: [(timestamp: Date, bike: BikeDataSample?, heartRate: Int?)] = sorted.map {
+            ($0.timestamp, $0, heartRates[Int($0.timestamp.timeIntervalSince1970)]?.beatsPerMinute ?? $0.heartRate)
+        }
+        for (second, observation) in heartRates where !bikeSeconds.contains(second) {
+            timeline.append((observation.timestamp, nil, observation.beatsPerMinute))
+        }
+        timeline.sort { $0.timestamp < $1.timestamp }
 
-        let startDate = sorted.first?.timestamp ?? Date(timeIntervalSince1970: 0)
-        let endDate = sorted.last?.timestamp ?? startDate
+        let startDate = timeline.first?.timestamp ?? Date(timeIntervalSince1970: 0)
+        let endDate = timeline.last?.timestamp ?? startDate
         let totalSeconds = max(0, endDate.timeIntervalSince(startDate))
 
         // Build trackpoints, integrating distance as we go so <DistanceMeters>
         // is monotonic and consistent with the in-app distance model.
         var trackpoints: [String] = []
-        trackpoints.reserveCapacity(sorted.count)
+        trackpoints.reserveCapacity(timeline.count)
         var cumulativeMeters = 0.0
         var maxSpeedMS = 0.0
         var previousDate: Date?
         var locationCursor = 0
 
-        for sample in sorted {
-            if let speed = sample.speed, let prev = previousDate {
-                let dt = sample.timestamp.timeIntervalSince(prev)
+        for point in timeline {
+            if let speed = point.bike?.speed, let prev = previousDate {
+                let dt = point.timestamp.timeIntervalSince(prev)
                 if dt > 0, dt < maxIntegrationGapSeconds {
                     let metersPerSecond = speed * 1000.0 / 3600.0
                     cumulativeMeters += metersPerSecond * dt
                     if metersPerSecond > maxSpeedMS { maxSpeedMS = metersPerSecond }
                 }
             }
-            previousDate = sample.timestamp
+            // Independent HR records must not shorten bike distance intervals.
+            if point.bike != nil { previousDate = point.timestamp }
 
             // Attach the nearest GPS fix in time (two-pointer; both sorted asc).
             var matchedLocation: CLLocation?
             if !sortedLocations.isEmpty {
                 while locationCursor + 1 < sortedLocations.count,
-                      abs(sortedLocations[locationCursor + 1].timestamp.timeIntervalSince(sample.timestamp))
-                      <= abs(sortedLocations[locationCursor].timestamp.timeIntervalSince(sample.timestamp)) {
+                      abs(sortedLocations[locationCursor + 1].timestamp.timeIntervalSince(point.timestamp))
+                      <= abs(sortedLocations[locationCursor].timestamp.timeIntervalSince(point.timestamp)) {
                     locationCursor += 1
                 }
                 matchedLocation = sortedLocations[locationCursor]
@@ -71,12 +87,12 @@ enum TCXBuilder {
 
             trackpoints.append(
                 trackpoint(
-                    time: sample.timestamp,
+                    time: point.timestamp,
                     location: matchedLocation,
                     distanceMeters: cumulativeMeters,
-                    heartRate: sample.heartRate,
-                    cadence: sample.cadence,
-                    watts: sample.power
+                    heartRate: point.heartRate,
+                    cadence: point.bike?.cadence,
+                    watts: point.bike?.power
                 )
             )
         }

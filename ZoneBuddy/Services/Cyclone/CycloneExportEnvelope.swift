@@ -357,6 +357,9 @@ private final class CycloneTCXParser: NSObject, XMLParserDelegate {
 
     func parse(_ data: Data) -> Bool {
         let parser = XMLParser(data: data)
+        // Garmin extensions use qualified names such as ns3:Watts. Process
+        // namespaces so the delegate receives local names regardless of prefix.
+        parser.shouldProcessNamespaces = true
         parser.delegate = self
         return parser.parse()
     }

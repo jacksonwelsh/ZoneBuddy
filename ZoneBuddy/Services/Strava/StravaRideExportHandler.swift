@@ -53,6 +53,7 @@ final class StravaRideExportHandler: RideExportHandling {
         if session.stravaFITData == nil {
             session.stravaTCXData = TCXBuilder.makeTCX(
                 samples: samples,
+                heartRateSamples: heartRateSamples,
                 locations: locations,
                 totalCalories: totalCalories
             )
