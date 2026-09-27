@@ -2,47 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>dev.jacksn.ZoneBuddy.strava</string>
-			<key>CFBundleTypeRole</key>
-			<string>None</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>zonebuddy</string>
-			</array>
-		</dict>
-	</array>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>audio</string>
-		<string>bluetooth-central</string>
-		<string>bluetooth-peripheral</string>
-	</array>
-	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>ZoneBuddy connects to your FTMS-compatible bike and receives heart rate from your Apple Watch during workouts.</string>
-	<key>NSHealthShareUsageDescription</key>
-	<string>ZoneBuddy reads your health data to display workout history.</string>
-	<key>NSHealthUpdateUsageDescription</key>
-	<string>ZoneBuddy saves your cycling workouts to the Health app when connected to a bike.</string>
-	<key>NSAppleMusicUsageDescription</key>
-	<string>ZoneBuddy needs access to your music library to play playlists during workouts.</string>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>ZoneBuddy uses the local network to relay heart rate data between your iPhone and iPad.</string>
-	<key>NSBonjourServices</key>
-	<array>
-		<string>_zb-hr-relay._tcp</string>
-		<string>_zb-hr-relay._udp</string>
-	</array>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSAllowsLocalNetworking</key>
-		<true/>
-	</dict>
-	<key>LSSupportsOpeningDocumentsInPlace</key>
-	<true/>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -58,17 +17,46 @@
 			</array>
 		</dict>
 	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>None</string>
+			<key>CFBundleURLName</key>
+			<string>dev.jacksn.ZoneBuddy.strava</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>zonebuddy</string>
+			</array>
+		</dict>
+	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_zb-hr-relay._tcp</string>
+		<string>_zb-hr-relay._udp</string>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+		<string>bluetooth-central</string>
+		<string>bluetooth-peripheral</string>
+	</array>
 	<key>UTImportedTypeDeclarations</key>
 	<array>
 		<dict>
-			<key>UTTypeIdentifier</key>
-			<string>com.topografix.gpx</string>
-			<key>UTTypeDescription</key>
-			<string>GPX Route</string>
 			<key>UTTypeConformsTo</key>
 			<array>
 				<string>public.xml</string>
 			</array>
+			<key>UTTypeDescription</key>
+			<string>GPX Route</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.topografix.gpx</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>

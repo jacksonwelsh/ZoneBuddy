@@ -60,7 +60,6 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "5A5A00000000000000000001"
             BuildableName = "ZoneBuddyWatch.app"
-            BlueprintName = "ZoneBuddyWatch"
             ReferencedContainer = "container:ZoneBuddy.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -84,7 +83,6 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "5A5A00000000000000000001"
             BuildableName = "ZoneBuddyWatch.app"
-            BlueprintName = "ZoneBuddyWatch"
             ReferencedContainer = "container:ZoneBuddy.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
