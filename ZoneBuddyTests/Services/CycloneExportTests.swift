@@ -89,6 +89,22 @@ struct CycloneExportTests {
     }
 
     @Test
+    func exportReplacesDeletedDraftWithNewActivity() async {
+        let replacementID = UUID(uuidString: "018f7798-1234-7abc-8123-123456789abd")!
+        let uploader = FakeCycloneUploader(activityIDs: [activityID, replacementID])
+        let store = CycloneCredentialStore(loadFromKeychain: false, credential: credential())
+        let service = CycloneService(credentialStore: store, uploader: uploader)
+        let session = WorkoutSession(name: "Intervals", totalDuration: 1200)
+
+        await service.export(session)
+        await service.export(session)
+
+        #expect(session.cycloneExportState == .exported)
+        #expect(session.cycloneActivityID == replacementID)
+        #expect(uploader.sourceIDs == [session.id.uuidString, session.id.uuidString])
+    }
+
+    @Test
     func enrollmentNormalizesServerToV1() async throws {
         let uploader = FakeCycloneUploader(activityID: activityID)
         let store = CycloneCredentialStore(loadFromKeychain: false)
@@ -166,11 +182,13 @@ private final class CycloneURLProtocol: URLProtocol {
 
 @MainActor
 private final class FakeCycloneUploader: CycloneUploading {
-    let activityID: UUID
+    private var activityIDs: [UUID]
     private(set) var sourceIDs: [String] = []
     private(set) var enrollmentURL: URL?
 
-    init(activityID: UUID) { self.activityID = activityID }
+    convenience init(activityID: UUID) { self.init(activityIDs: [activityID]) }
+
+    init(activityIDs: [UUID]) { self.activityIDs = activityIDs }
 
     func enroll(serverURL: URL, code: String, deviceName: String) async throws -> CycloneCredential {
         enrollmentURL = serverURL
@@ -179,6 +197,8 @@ private final class FakeCycloneUploader: CycloneUploading {
 
     func importDraft(_ envelope: CycloneExportEnvelope, credential: CycloneCredential) async throws -> UUID {
         sourceIDs.append(envelope.source.id)
-        return activityID
+        guard !activityIDs.isEmpty else { throw CycloneError.invalidResponse }
+        if activityIDs.count == 1 { return activityIDs[0] }
+        return activityIDs.removeFirst()
     }
 }

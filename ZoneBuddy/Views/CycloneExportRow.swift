@@ -30,6 +30,10 @@ struct CycloneExportRow: View {
                 } label: {
                     Label("Open Draft in Cyclone", systemImage: "arrow.up.right.square")
                 }
+                exportButton("Export again")
+                Text("Use Export again if the Cyclone draft was deleted.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         case .exporting:
             HStack(spacing: 8) {
