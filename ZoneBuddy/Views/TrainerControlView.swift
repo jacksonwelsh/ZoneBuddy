@@ -14,7 +14,7 @@ struct TrainerControlView: View {
         case inline     // iPad — transparent, sits inside the player layout
     }
 
-    /// Locally-tracked "intended" target. Set immediately on each tap so the
+    /// Locally-tracked "intended" target. Set immediately on release so the
     /// readout reacts without waiting for the BLE round trip, then cleared
     /// after the debounced send completes and the controller has caught up.
     @State private var pendingTargetWatts: Int?
@@ -22,9 +22,9 @@ struct TrainerControlView: View {
     @State private var pendingLevel: Double?
     @State private var levelDebounceTask: Task<Void, Never>?
 
-    /// How long to wait after the last tap before pushing the accumulated
-    /// adjustment to the trainer. Long enough to coalesce a flurry of taps,
-    /// short enough that a single tap still feels responsive.
+    /// How long to wait after the last adjustment before pushing the accumulated
+    /// adjustment to the trainer. Coalesces quick repeated changes while
+    /// keeping individual adjustments responsive.
     private static let trainerWriteDebounce: Duration = .milliseconds(220)
 
     private var controller: (any TrainerControlling)? {
@@ -157,8 +157,7 @@ struct TrainerControlView: View {
     private var ergSection: some View {
         if capabilities?.powerTargetSettingSupported == true {
             Section {
-                wattsReadout
-                stepperRow
+                powerDial
                 if controller?.ergUserOverridden == true {
                     Button {
                         viewModel.reEnableERGForCurrentInterval()
@@ -169,7 +168,7 @@ struct TrainerControlView: View {
             } header: {
                 Text("ERG Mode")
             } footer: {
-                Text("Tap ± to nudge the target. ZoneBuddy stops auto-setting at interval boundaries after a manual adjustment.")
+                Text("Swipe the dial to set watts in 5 W steps. ZoneBuddy stops auto-setting at interval boundaries after a manual adjustment.")
             }
         }
     }
@@ -219,20 +218,7 @@ struct TrainerControlView: View {
     @ViewBuilder
     private var inlineERGControls: some View {
         if capabilities?.powerTargetSettingSupported == true {
-            HStack(spacing: 16) {
-                stepperButton(delta: -5)
-                Spacer()
-                VStack(spacing: 2) {
-                    Text(wattsLabel)
-                        .font(.system(size: 36, weight: .bold, design: .rounded).monospacedDigit())
-                        .contentTransition(.numericText())
-                    Text("watts")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                stepperButton(delta: 5)
-            }
+            powerDial
         } else {
             Text("Trainer doesn't support power targets")
                 .font(.subheadline)
@@ -266,49 +252,21 @@ struct TrainerControlView: View {
 
     // MARK: - Components
 
-    private var wattsLabel: String {
-        if let pending = pendingTargetWatts { return "\(pending)" }
-        guard let watts = controller?.currentTargetWatts else { return "—" }
-        return "\(watts)"
-    }
-
-    @ViewBuilder
-    private var wattsReadout: some View {
-        HStack {
-            Text("Target")
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(wattsLabel + " W")
-                .font(.title2.monospacedDigit().weight(.semibold))
-                .contentTransition(.numericText())
-        }
-    }
-
-    @ViewBuilder
-    private var stepperRow: some View {
-        HStack(spacing: 16) {
-            stepperButton(delta: -5)
-            Spacer()
-            stepperButton(delta: 5)
-        }
-        .padding(.vertical, 4)
-    }
-
-    private func stepperButton(delta: Int) -> some View {
-        Button {
-            bumpERG(by: delta)
-        } label: {
-            Text(delta > 0 ? "+\(delta) W" : "\(delta) W")
-                .font(.headline.monospacedDigit())
-                .frame(maxWidth: .infinity, minHeight: 44)
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.large)
+    private var powerDial: some View {
+        TrainerPowerDial(
+            watts: pendingTargetWatts ?? controller?.currentTargetWatts
+                ?? capabilities?.supportedPowerRange?.lowerBound ?? 0,
+            range: capabilities?.supportedPowerRange ?? 0...Int(Int16.max),
+            onCommit: { target in
+                let current = pendingTargetWatts ?? controller?.currentTargetWatts ?? 0
+                bumpERG(by: target - current)
+            }
+        )
         .disabled(controller == nil || capabilities?.powerTargetSettingSupported != true)
     }
 
-    /// Accumulate ERG nudges locally and flush after taps settle. Sending a
-    /// single net delta avoids the BLE-serialization race where rapid taps
+    /// Accumulate ERG changes locally and flush after adjustments settle. Sending a
+    /// single net delta avoids the BLE-serialization race where rapid adjustments
     /// each captured the same stale `currentTargetWatts` as their base.
     private func bumpERG(by delta: Int) {
         let base = pendingTargetWatts ?? controller?.currentTargetWatts ?? 0
@@ -320,7 +278,7 @@ struct TrainerControlView: View {
             guard !Task.isCancelled, let target = pendingTargetWatts else { return }
             let current = controller?.currentTargetWatts ?? 0
             await controller?.adjustTargetWatts(by: target - current)
-            // Only clear if the user hasn't tapped again while the BLE write
+            // Only clear if the user hasn't adjusted again while the BLE write
             // was in flight — otherwise a newer pending target would be lost.
             if pendingTargetWatts == target {
                 pendingTargetWatts = nil
@@ -474,5 +432,178 @@ struct TrainerControlView: View {
             bits.append("\(range.lowerBound)–\(range.upperBound) W")
         }
         return bits.joined(separator: " · ")
+    }
+}
+
+/// A horizontal thumbwheel: drag the scale beneath the fixed selection mark.
+/// Gesture state resets on cancellation without sending a trainer command.
+private struct TrainerPowerDial: View {
+    let watts: Int
+    let range: ClosedRange<Int>
+    var onCommit: (Int) -> Void
+
+    @GestureState private var drag: DialDrag?
+    // GestureState can reset before onEnded. Keep the accepted drag's starting
+    // target separately so release does not discard the user's selection.
+    @State private var dragStartForCommit: Int?
+
+    private struct DialDrag {
+        let start: Int
+        var translation: CGFloat
+    }
+
+    private let tickSpacing: CGFloat = 12
+
+    private func target(start: Int, translation: CGFloat) -> Int {
+        TrainerPowerSteps.target(
+            start: start,
+            steps: Int((-translation / tickSpacing).rounded()),
+            range: range
+        )
+    }
+
+    private var displayedWatts: Int {
+        guard let drag else { return watts }
+        return target(start: drag.start, translation: drag.translation)
+    }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                Text("\(displayedWatts)")
+                    .font(.system(size: 44, weight: .bold, design: .rounded).monospacedDigit())
+                Text("W")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+
+            GeometryReader { geometry in
+                let center = geometry.size.width / 2
+                let radius = Int(ceil(center / tickSpacing)) + 1
+                let nearestTick = displayedWatts / 5
+                ZStack(alignment: .top) {
+                    ForEach((-radius)...radius, id: \.self) { offset in
+                        let tick = (nearestTick + offset) * 5
+                        if range.contains(tick) {
+                            let major = tick.isMultiple(of: 25)
+                            VStack(spacing: 8) {
+                                Capsule()
+                                    .fill(.secondary.opacity(major ? 0.75 : 0.35))
+                                    .frame(width: 2, height: major ? 25 : 14)
+                                    .frame(height: 25, alignment: .top)
+                                if major {
+                                    Text("\(tick)")
+                                        .font(.caption2.monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .position(
+                                x: center + CGFloat(tick - displayedWatts) / 5 * tickSpacing,
+                                y: 29
+                            )
+                        }
+                    }
+                    Capsule()
+                        .fill(.tint)
+                        .frame(width: 3, height: 31)
+                }
+                .frame(width: geometry.size.width, height: 64)
+                .clipped()
+                .mask {
+                    LinearGradient(
+                        stops: [.init(color: .clear, location: 0),
+                                .init(color: .black, location: 0.12),
+                                .init(color: .black, location: 0.88),
+                                .init(color: .clear, location: 1)],
+                        startPoint: .leading, endPoint: .trailing
+                    )
+                }
+            }
+            .frame(height: 64)
+
+            Text("Swipe to adjust")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 10)
+                .updating($drag) { value, state, _ in
+                    guard state != nil || abs(value.translation.width) > abs(value.translation.height) else {
+                        return
+                    }
+                    state = DialDrag(start: state?.start ?? watts, translation: value.translation.width)
+                }
+                .onChanged { value in
+                    // Refresh on every event, including a new gesture after a
+                    // cancellation, so an old starting target cannot leak in.
+                    if let drag {
+                        dragStartForCommit = drag.start
+                    } else if abs(value.translation.width) > abs(value.translation.height) {
+                        dragStartForCommit = watts
+                    } else {
+                        dragStartForCommit = nil
+                    }
+                }
+                .onEnded { value in
+                    defer { dragStartForCommit = nil }
+                    guard let start = dragStartForCommit else { return }
+                    let next = target(start: start, translation: value.translation.width)
+                    if next != watts { onCommit(next) }
+                }
+        )
+        .sensoryFeedback(.selection, trigger: displayedWatts)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Target power")
+        .accessibilityValue("\(displayedWatts) watts")
+        .accessibilityHint("Swipe up or down to select the next 5 watt step")
+        .accessibilityAdjustableAction { direction in
+            let delta: Int
+            switch direction {
+            case .increment: delta = 5
+            case .decrement: delta = -5
+            @unknown default: return
+            }
+            let next = TrainerPowerSteps.target(start: watts, steps: delta > 0 ? 1 : -1, range: range)
+            if next != watts { onCommit(next) }
+        }
+    }
+}
+
+#Preview("Power Dial — Interactive iPad") {
+    @Previewable @State var watts = 183
+
+    NavigationStack {
+        ScrollView {
+            VStack(spacing: 24) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Label("ERG", systemImage: "scope")
+                        .font(.headline)
+                    TrainerPowerDial(watts: watts, range: 50...1000) { watts = $0 }
+
+                }
+                .padding(16)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+
+                Text("Applied target: \(watts) W")
+                    .font(.headline.monospacedDigit())
+                Text("Drag the dial, then release to apply. This preview uses local state and does not connect to a trainer.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                HStack {
+                    Button("Minimum") { watts = 50 }
+                    Button("183 W") { watts = 183 }
+                    Button("Maximum") { watts = 1000 }
+                }
+                .buttonStyle(.bordered)
+            }
+            .frame(maxWidth: 480)
+            .padding(24)
+            .frame(maxWidth: .infinity)
+        }
+        .navigationTitle("Trainer Dial Preview")
     }
 }
